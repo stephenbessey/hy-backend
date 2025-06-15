@@ -16,8 +16,40 @@ app.use(cors({
 }));
 
 app.options('*', cors());
-
 app.use(express.json());
+
+const workoutTemplates = [
+  {
+    id: 1,
+    name: 'Beginner HYROX',
+    description: 'A scaled version for beginners',
+    events: [
+      { name: '1km Run', duration: 300, color: '#feed00' },
+      { name: '1km SkiErg', duration: 280, color: '#feed00' },
+      { name: '1km Run', duration: 320, color: '#feed00' },
+      { name: '50m Sled Push', duration: 150, color: '#feed00' },
+      { name: '1km Run', duration: 330, color: '#feed00' },
+      { name: '50m Sled Pull', duration: 140, color: '#feed00' },
+      { name: '1km Run', duration: 340, color: '#feed00' },
+      { name: '80m Burpee Broad Jumps', duration: 400, color: '#feed00' }
+    ]
+  },
+  {
+    id: 2,
+    name: 'Intermediate HYROX',
+    description: 'For regular fitness enthusiasts',
+    events: [
+      { name: '1km Run', duration: 240, color: '#feed00' },
+      { name: '1km SkiErg', duration: 250, color: '#feed00' },
+      { name: '1km Run', duration: 250, color: '#feed00' },
+      { name: '50m Sled Push', duration: 120, color: '#feed00' },
+      { name: '1km Run', duration: 260, color: '#feed00' },
+      { name: '50m Sled Pull', duration: 115, color: '#feed00' },
+      { name: '1km Run', duration: 270, color: '#feed00' },
+      { name: '80m Burpee Broad Jumps', duration: 350, color: '#feed00' }
+    ]
+  }
+];
 
 const athletes = [
   {
@@ -49,84 +81,12 @@ const athletes = [
   },
   {
     id: 2,
-    name: 'Lauren Weeks',
+    name: 'Laura Horvath',
     category: 'Women Pro',
-    total_time: 4245,
+    total_time: 4200,
     ranking: 1,
     year: 2024,
     location: 'World Championships',
-    events: [
-      { name: '1km Run', duration: 210, color: '#feed00', order_index: 1, split_time: 210 },
-      { name: '1km SkiErg', duration: 240, color: '#feed00', order_index: 2, split_time: 450 },
-      { name: '1km Run', duration: 218, color: '#feed00', order_index: 3, split_time: 668 },
-      { name: '50m Sled Push', duration: 105, color: '#feed00', order_index: 4, split_time: 773 },
-      { name: '1km Run', duration: 225, color: '#feed00', order_index: 5, split_time: 998 },
-      { name: '50m Sled Pull', duration: 110, color: '#feed00', order_index: 6, split_time: 1108 },
-      { name: '1km Run', duration: 220, color: '#feed00', order_index: 7, split_time: 1328 },
-      { name: '80m Burpee Broad Jumps', duration: 280, color: '#feed00', order_index: 8, split_time: 1608 },
-      { name: '1km Run', duration: 228, color: '#feed00', order_index: 9, split_time: 1836 },
-      { name: '100m Rowing', duration: 235, color: '#feed00', order_index: 10, split_time: 2071 },
-      { name: '1km Run', duration: 230, color: '#feed00', order_index: 11, split_time: 2301 },
-      { name: '200m Farmers Carry', duration: 220, color: '#feed00', order_index: 12, split_time: 2521 },
-      { name: '1km Run', duration: 235, color: '#feed00', order_index: 13, split_time: 2756 },
-      { name: '100m Sandbag Lunges', duration: 310, color: '#feed00', order_index: 14, split_time: 3066 },
-      { name: '1km Run', duration: 240, color: '#feed00', order_index: 15, split_time: 3306 },
-      { name: '100 Wall Balls', duration: 620, color: '#feed00', order_index: 16, split_time: 3926 }
-    ]
-  },
-  {
-    id: 3,
-    name: 'Jake Dearden',
-    category: 'Men Pro',
-    total_time: 3850,
-    ranking: 2,
-    year: 2024,
-    location: 'World Championships',
-    events: [
-      { name: '1km Run', duration: 190, color: '#feed00', order_index: 1, split_time: 190 },
-      { name: '1km SkiErg', duration: 220, color: '#feed00', order_index: 2, split_time: 410 },
-      { name: '1km Run', duration: 195, color: '#feed00', order_index: 3, split_time: 605 },
-      { name: '50m Sled Push', duration: 92, color: '#feed00', order_index: 4, split_time: 697 },
-      { name: '1km Run', duration: 205, color: '#feed00', order_index: 5, split_time: 902 },
-      { name: '50m Sled Pull', duration: 95, color: '#feed00', order_index: 6, split_time: 997 },
-      { name: '1km Run', duration: 202, color: '#feed00', order_index: 7, split_time: 1199 },
-      { name: '80m Burpee Broad Jumps', duration: 240, color: '#feed00', order_index: 8, split_time: 1439 },
-      { name: '1km Run', duration: 208, color: '#feed00', order_index: 9, split_time: 1647 },
-      { name: '100m Rowing', duration: 210, color: '#feed00', order_index: 10, split_time: 1857 },
-      { name: '1km Run', duration: 205, color: '#feed00', order_index: 11, split_time: 2062 },
-      { name: '200m Farmers Carry', duration: 195, color: '#feed00', order_index: 12, split_time: 2257 },
-      { name: '1km Run', duration: 210, color: '#feed00', order_index: 13, split_time: 2467 },
-      { name: '100m Sandbag Lunges', duration: 270, color: '#feed00', order_index: 14, split_time: 2737 },
-      { name: '1km Run', duration: 215, color: '#feed00', order_index: 15, split_time: 2952 },
-      { name: '100 Wall Balls', duration: 560, color: '#feed00', order_index: 16, split_time: 3512 }
-    ]
-  }
-];
-
-const workoutTemplates = [
-  {
-    id: 1,
-    name: 'Beginner HYROX',
-    description: 'Modified HYROX workout for beginners',
-    difficulty: 'Beginner',
-    estimated_time: 4800,
-    events: [
-      { name: '800m Run', duration: 240, color: '#feed00' },
-      { name: '800m SkiErg', duration: 280, color: '#feed00' },
-      { name: '800m Run', duration: 250, color: '#feed00' },
-      { name: '25m Sled Push', duration: 120, color: '#feed00' },
-      { name: '800m Run', duration: 260, color: '#feed00' },
-      { name: '25m Sled Pull', duration: 130, color: '#feed00' },
-      { name: '800m Run', duration: 255, color: '#feed00' },
-      { name: '40m Burpee Broad Jumps', duration: 320, color: '#feed00' }
-    ]
-  },
-  {
-    id: 2,
-    name: 'Intermediate HYROX',
-    description: 'Standard HYROX workout with moderate pacing',
-    difficulty: 'Intermediate',
-    estimated_time: 4200,
     events: [
       { name: '1km Run', duration: 220, color: '#feed00' },
       { name: '1km SkiErg', duration: 250, color: '#feed00' },
@@ -199,7 +159,13 @@ app.get('/api/leaderboard', (req, res) => {
 });
 
 app.get('/api/templates', (req, res) => {
-  res.json(workoutTemplates);
+  try {
+    console.log('Serving workout templates:', workoutTemplates.length);
+    res.json(workoutTemplates);
+  } catch (error) {
+    console.error('Error serving templates:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/api/stats/events', (req, res) => {
@@ -282,6 +248,7 @@ app.get('/api/docs', (req, res) => {
   });
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Enhanced Hyrox Simulator Backend running on port ${PORT}`);
   console.log(`📊 Serving ${athletes.length} athletes`);
