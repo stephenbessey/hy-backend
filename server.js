@@ -4,7 +4,19 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'hysimulator.vercel.app',
+    /\.vercel\.app$/,
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true
+}));
+
+app.options('*', cors());
+
 app.use(express.json());
 
 const athletes = [
@@ -133,36 +145,35 @@ app.get('/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     message: 'Hyrox Simulator Backend is running',
-    version: '2.0.0'
+    version: '1.0.0',
+    athletes_count: athletes.length
   });
 });
 
 app.get('/api/athletes', (req, res) => {
-  const { category, year } = req.query;
-  let filteredAthletes = athletes;
-  
-  if (category) {
-    filteredAthletes = filteredAthletes.filter(a => 
-      a.category.toLowerCase().includes(category.toLowerCase())
-    );
+  try {
+    console.log('Serving athletes data:', athletes.length);
+    res.json(athletes);
+  } catch (error) {
+    console.error('Error serving athletes:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  
-  if (year) {
-    filteredAthletes = filteredAthletes.filter(a => a.year === parseInt(year));
-  }
-  
-  res.json(filteredAthletes);
 });
 
 app.get('/api/athletes/:id', (req, res) => {
-  const { id } = req.params;
-  const athlete = athletes.find(a => a.id === parseInt(id));
-  
-  if (!athlete) {
-    return res.status(404).json({ error: 'Athlete not found' });
+  try {
+    const { id } = req.params;
+    const athlete = athletes.find(a => a.id === parseInt(id));
+    
+    if (!athlete) {
+      return res.status(404).json({ error: 'Athlete not found' });
+    }
+    
+    res.json(athlete);
+  } catch (error) {
+    console.error('Error serving athlete:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  
-  res.json(athlete);
 });
 
 app.get('/api/leaderboard', (req, res) => {
