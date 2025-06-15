@@ -7,7 +7,9 @@ const PORT = process.env.PORT || 10000;
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'hysimulator.vercel.app',
+    'https://hysimulator.vercel.app',
+    'https://www.hysimulator.com',
+    'https://hysimulator.com',      
     /\.vercel\.app$/,
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
