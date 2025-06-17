@@ -9,7 +9,7 @@ app.use(cors({
     'http://localhost:3000',
     'https://hysimulator.vercel.app',
     'https://www.hysimulator.com',
-    'https://hysimulator.com',      
+    'https://hysimulator.com',
     /\.vercel\.app$/,
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -18,40 +18,22 @@ app.use(cors({
 }));
 
 app.options('*', cors());
+
 app.use(express.json());
 
-const workoutTemplates = [
-  {
-    id: 1,
-    name: 'Beginner HYROX',
-    description: 'A scaled version for beginners',
-    events: [
-      { name: '1km Run', duration: 300, color: '#feed00' },
-      { name: '1km SkiErg', duration: 280, color: '#feed00' },
-      { name: '1km Run', duration: 320, color: '#feed00' },
-      { name: '50m Sled Push', duration: 150, color: '#feed00' },
-      { name: '1km Run', duration: 330, color: '#feed00' },
-      { name: '50m Sled Pull', duration: 140, color: '#feed00' },
-      { name: '1km Run', duration: 340, color: '#feed00' },
-      { name: '80m Burpee Broad Jumps', duration: 400, color: '#feed00' }
-    ]
-  },
-  {
-    id: 2,
-    name: 'Intermediate HYROX',
-    description: 'For regular fitness enthusiasts',
-    events: [
-      { name: '1km Run', duration: 240, color: '#feed00' },
-      { name: '1km SkiErg', duration: 250, color: '#feed00' },
-      { name: '1km Run', duration: 250, color: '#feed00' },
-      { name: '50m Sled Push', duration: 120, color: '#feed00' },
-      { name: '1km Run', duration: 260, color: '#feed00' },
-      { name: '50m Sled Pull', duration: 115, color: '#feed00' },
-      { name: '1km Run', duration: 270, color: '#feed00' },
-      { name: '80m Burpee Broad Jumps', duration: 350, color: '#feed00' }
-    ]
-  }
-];
+
+app.get('/', (req, res) => {
+  res.json({
+    message: 'HYROX Simulator Backend API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      athletes: '/api/athletes',
+      docs: '/api/docs'
+    },
+    status: 'running'
+  });
+});
 
 const athletes = [
   {
@@ -98,6 +80,25 @@ const athletes = [
       { name: '50m Sled Pull', duration: 105, color: '#feed00' },
       { name: '1km Run', duration: 235, color: '#feed00' },
       { name: '80m Burpee Broad Jumps', duration: 300, color: '#feed00' }
+    ]
+  }
+];
+
+const workoutTemplates = [
+  {
+    id: 'beginner',
+    name: 'Beginner Template',
+    description: 'A beginner-friendly HYROX simulation',
+    total_time: 5400, // 90 minutes
+    events: [
+      { name: '1km Run', duration: 360, color: '#feed00' },
+      { name: '1km SkiErg', duration: 300, color: '#feed00' },
+      { name: '1km Run', duration: 360, color: '#feed00' },
+      { name: '50m Sled Push', duration: 180, color: '#feed00' },
+      { name: '1km Run', duration: 360, color: '#feed00' },
+      { name: '50m Sled Pull', duration: 150, color: '#feed00' },
+      { name: '1km Run', duration: 360, color: '#feed00' },
+      { name: '80m Burpee Broad Jumps', duration: 420, color: '#feed00' }
     ]
   }
 ];
@@ -161,13 +162,7 @@ app.get('/api/leaderboard', (req, res) => {
 });
 
 app.get('/api/templates', (req, res) => {
-  try {
-    console.log('Serving workout templates:', workoutTemplates.length);
-    res.json(workoutTemplates);
-  } catch (error) {
-    console.error('Error serving templates:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  res.json(workoutTemplates);
 });
 
 app.get('/api/stats/events', (req, res) => {
@@ -237,6 +232,7 @@ app.get('/api/docs', (req, res) => {
     title: 'HYROX Simulator API',
     version: '2.0.0',
     endpoints: {
+      'GET /': 'API info',
       'GET /health': 'Health check',
       'GET /api/athletes': 'Get all athletes (supports ?category= and ?year= filters)',
       'GET /api/athletes/:id': 'Get specific athlete',
@@ -250,7 +246,6 @@ app.get('/api/docs', (req, res) => {
   });
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Enhanced Hyrox Simulator Backend running on port ${PORT}`);
   console.log(`📊 Serving ${athletes.length} athletes`);
