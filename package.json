@@ -1,24 +1,35 @@
 {
-  "name": "hysimulator-simple-backend",
-  "version": "1.0.0",
-  "description": "Simple backend API for Hyrox Simulator",
+  "name": "hy-backend",
+  "version": "2.0.0",
+  "description": "Enhanced backend API for Hyrox Simulator with live data scraping",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node test-backend.js"
   },
   "dependencies": {
+    "axios": "^1.10.0",
+    "cheerio": "^1.1.0",
+    "cors": "^2.8.5",
     "express": "^4.21.2",
-    "cors": "^2.8.5"
+    "node-cron": "^3.0.3"
   },
   "engines": {
     "node": ">=16.0.0"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/stephenbessey/hysimulator-simple-backend.git"
-  },
-  "keywords": ["hyrox", "fitness", "timer", "backend", "api"],
+  "keywords": [
+    "hyrox",
+    "fitness",
+    "timer",
+    "backend",
+    "api",
+    "scraping",
+    "live-data"
+  ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "punycode": "^2.3.1"
+  }
 }
