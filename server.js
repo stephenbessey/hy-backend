@@ -8,6 +8,7 @@ const DatabaseManager = require('./database-integration');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Initialize database
 const db = new DatabaseManager();
 
 app.use(cors({
@@ -26,6 +27,7 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 
+// Configuration
 const SCRAPING_CONFIG = {
   enabled: true,
   timeout: 30000,
@@ -36,6 +38,7 @@ const SCRAPING_CONFIG = {
   ]
 };
 
+// In-memory athletes array (cached from database)
 let athletes = [
   {
     id: 1,
@@ -104,12 +107,14 @@ const workoutTemplates = [
   }
 ];
 
+// Transform scraped data to match our format
 function transformScrapedData(scrapedData) {
   return scrapedData.map((athlete, index) => {
     const events = [];
     let totalTime = 0;
     let splitTime = 0;
     
+    // Define standard HYROX events in order
     const standardEvents = [
       '1km Run', '1000m SkiErg', '1km Run', '50m Sled Push',
       '1km Run', '50m Sled Pull', '1km Run', '80m Burpee Broad Jumps',
@@ -153,6 +158,7 @@ function transformScrapedData(scrapedData) {
   });
 }
 
+// HyroxScraper Class
 class HyroxScraper {
   constructor() {
     this.axiosConfig = {
@@ -324,11 +330,24 @@ class HyroxScraper {
 
   timeToSeconds(timeStr) {
     if (!timeStr || typeof timeStr !== 'string') return 0;
+    
+    // Handle formats like "00:02:25" (HH:MM:SS) or "02:25" (MM:SS)
     const cleanTime = timeStr.replace(/[^\d:]/g, '');
     const parts = cleanTime.split(':');
-    if (parts.length === 2) {
-      return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    
+    if (parts.length === 3) {
+      // HH:MM:SS format
+      const hours = parseInt(parts[0]) || 0;
+      const minutes = parseInt(parts[1]) || 0;
+      const seconds = parseInt(parts[2]) || 0;
+      return hours * 3600 + minutes * 60 + seconds;
+    } else if (parts.length === 2) {
+      // MM:SS format
+      const minutes = parseInt(parts[0]) || 0;
+      const seconds = parseInt(parts[1]) || 0;
+      return minutes * 60 + seconds;
     }
+    
     return 0;
   }
 
@@ -388,6 +407,7 @@ class HyroxScraper {
   }
 }
 
+// Updated periodic scrape function with database integration
 async function performPeriodicScrape() {
   if (!SCRAPING_CONFIG.enabled) {
     console.log('⏸️ Scraping is disabled');
@@ -403,8 +423,10 @@ async function performPeriodicScrape() {
     if (scrapedData.length > 0) {
       const newAthletes = transformScrapedData(scrapedData);
       
+      // Save to database
       await db.saveAthletes(newAthletes);
       
+      // Update in-memory array (for compatibility)
       let updated = 0, added = 0;
       newAthletes.forEach(newAthlete => {
         const existingIndex = athletes.findIndex(a => a.name === newAthlete.name);
@@ -424,15 +446,18 @@ async function performPeriodicScrape() {
   }
 }
 
+// Schedule monthly scraping (1st day of each month at midnight)
 if (SCRAPING_CONFIG.enabled) {
   cron.schedule('0 0 1 * *', performPeriodicScrape);
   console.log('⏰ Scheduled scraping monthly (1st day of each month)');
 }
 
+// Load initial data from database on startup
 async function initializeFromDatabase() {
   try {
     console.log('🔄 Loading initial data from database...');
     
+    // Wait for database to be ready first
     await db.ready;
     
     const dbAthletes = await db.loadAthletes();
@@ -449,6 +474,7 @@ async function initializeFromDatabase() {
   }
 }
 
+// API Routes
 app.get('/', (req, res) => {
   res.json({
     message: 'HYROX Simulator Backend API',
@@ -470,10 +496,12 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Updated athletes endpoint with database integration
 app.get('/api/athletes', async (req, res) => {
   try {
     const { category, year, limit } = req.query;
     
+    // Load from database if empty in memory
     if (athletes.length === 0) {
       console.log('🔄 Loading athletes from database...');
       const dbAthletes = await db.loadAthletes();
@@ -568,6 +596,7 @@ app.get('/api/stats/events', (req, res) => {
   res.json(eventStats);
 });
 
+// New database stats endpoint
 app.get('/api/stats/database', async (req, res) => {
   try {
     const stats = await db.getStats();
@@ -584,6 +613,7 @@ app.get('/api/stats/database', async (req, res) => {
   }
 });
 
+// Updated manual scrape endpoint with database integration
 app.post('/api/scrape', async (req, res) => {
   try {
     const { category = 'all', maxAthletes } = req.body;
@@ -597,8 +627,10 @@ app.post('/api/scrape', async (req, res) => {
     if (scrapedData.length > 0) {
       const newAthletes = transformScrapedData(scrapedData);
       
+      // Save to database
       const dbResult = await db.saveAthletes(newAthletes);
       
+      // Update in-memory array
       let updated = 0, added = 0;
       newAthletes.forEach(newAthlete => {
         const existingIndex = athletes.findIndex(a => a.name === newAthlete.name);
@@ -641,6 +673,7 @@ app.get('/api/scrape/status', (req, res) => {
   });
 });
 
+// User sessions
 let userSessions = [];
 
 app.post('/api/sessions', (req, res) => {
@@ -698,10 +731,12 @@ app.get('/api/docs', (req, res) => {
   });
 });
 
+// Start server with database initialization
 app.listen(PORT, async () => {
   console.log(`🚀 Enhanced Hyrox Simulator Backend running on port ${PORT}`);
   console.log(`🕷️ Scraping: ${SCRAPING_CONFIG.enabled ? 'ENABLED' : 'DISABLED'}`);
   
+  // Initialize from database
   await initializeFromDatabase();
   console.log(`📊 Serving ${athletes.length} athletes`);
   
