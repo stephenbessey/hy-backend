@@ -5,53 +5,89 @@ class DatabaseManager {
   constructor() {
     this.dbPath = path.join(__dirname, 'athletes.db');
     this.db = null;
-    this.init();
+    this.ready = this.init();
   }
 
   init() {
-    this.db = new sqlite3.Database(this.dbPath, (err) => {
-      if (err) {
-        console.error('Error connecting to database:', err);
-      } else {
-        console.log('📊 Connected to SQLite database');
-        this.createTables();
-      }
+    return new Promise((resolve, reject) => {
+      this.db = new sqlite3.Database(this.dbPath, (err) => {
+        if (err) {
+          console.error('Error connecting to database:', err);
+          reject(err);
+        } else {
+          console.log('📊 Connected to SQLite database');
+          this.createTables().then(resolve).catch(reject);
+        }
+      });
     });
   }
 
   createTables() {
-    this.db.run(`
-      CREATE TABLE IF NOT EXISTS athletes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        category TEXT NOT NULL,
-        total_time INTEGER NOT NULL,
-        ranking INTEGER,
-        year INTEGER,
-        location TEXT,
-        scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+    return new Promise((resolve, reject) => {
+      this.db.serialize(() => {
+        this.db.run(`
+          CREATE TABLE IF NOT EXISTS athletes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            category TEXT NOT NULL,
+            total_time INTEGER NOT NULL,
+            ranking INTEGER,
+            year INTEGER,
+            location TEXT,
+            scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `, (err) => {
+          if (err) {
+            console.error('Error creating athletes table:', err);
+            reject(err);
+            return;
+          }
+        });
 
-    this.db.run(`
-      CREATE TABLE IF NOT EXISTS events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        athlete_id INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        duration INTEGER NOT NULL,
-        color TEXT DEFAULT '#feed00',
-        order_index INTEGER NOT NULL,
-        split_time INTEGER,
-        FOREIGN KEY (athlete_id) REFERENCES athletes (id) ON DELETE CASCADE
-      )
-    `);
+        this.db.run(`
+          CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            duration INTEGER NOT NULL,
+            color TEXT DEFAULT '#feed00',
+            order_index INTEGER NOT NULL,
+            split_time INTEGER,
+            FOREIGN KEY (athlete_id) REFERENCES athletes (id) ON DELETE CASCADE
+          )
+        `, (err) => {
+          if (err) {
+            console.error('Error creating events table:', err);
+            reject(err);
+            return;
+          }
+        });
 
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_athletes_category ON athletes(category)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_events_athlete_id ON events(athlete_id)`);
+        this.db.run(`CREATE INDEX IF NOT EXISTS idx_athletes_category ON athletes(category)`, (err) => {
+          if (err) {
+            console.error('Error creating athletes index:', err);
+            reject(err);
+            return;
+          }
+        });
+        
+        this.db.run(`CREATE INDEX IF NOT EXISTS idx_events_athlete_id ON events(athlete_id)`, (err) => {
+          if (err) {
+            console.error('Error creating events index:', err);
+            reject(err);
+            return;
+          }
+          console.log('✅ Database tables and indexes created successfully');
+          resolve();
+        });
+      });
+    });
   }
 
   async saveAthletes(athletesArray) {
+    await this.ready;
+    
     return new Promise((resolve, reject) => {
       this.db.serialize(() => {
         this.db.run('BEGIN TRANSACTION');
@@ -60,7 +96,6 @@ class DatabaseManager {
         let updated = 0;
         
         athletesArray.forEach((athlete, index) => {
-          // Insert or update athlete
           this.db.run(`
             INSERT OR REPLACE INTO athletes (name, category, total_time, ranking, year, location, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -78,7 +113,6 @@ class DatabaseManager {
                 console.error('Error deleting old events:', err);
                 return;
               }
-              
               athlete.events.forEach((event, eventIndex) => {
                 this.db.run(`
                   INSERT INTO events (athlete_id, name, duration, color, order_index, split_time)
@@ -110,6 +144,8 @@ class DatabaseManager {
   }
 
   async loadAthletes() {
+    await this.ready;
+    
     return new Promise((resolve, reject) => {
       const query = `
         SELECT 
@@ -171,6 +207,8 @@ class DatabaseManager {
   }
 
   async getStats() {
+    await this.ready;
+    
     return new Promise((resolve, reject) => {
       this.db.get(`
         SELECT 
