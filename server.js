@@ -31,64 +31,7 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 
-let athletes = [
-  {
-    id: 1,
-    name: 'Hunter McIntyre',
-    category: 'Men Pro',
-    total_time: 3792,
-    ranking: 1,
-    year: 2024,
-    location: 'World Championships',
-    lastUpdated: new Date().toISOString(),
-    events: [
-      { name: '1km Run', duration: 185, color: '#feed00', order_index: 1, split_time: 185 },
-      { name: '1000m SkiErg', duration: 215, color: '#feed00', order_index: 2, split_time: 400 },
-      { name: '1km Run', duration: 192, color: '#feed00', order_index: 3, split_time: 592 },
-      { name: '50m Sled Push', duration: 88, color: '#feed00', order_index: 4, split_time: 680 },
-      { name: '1km Run', duration: 200, color: '#feed00', order_index: 5, split_time: 880 },
-      { name: '50m Sled Pull', duration: 90, color: '#feed00', order_index: 6, split_time: 970 },
-      { name: '1km Run', duration: 198, color: '#feed00', order_index: 7, split_time: 1168 },
-      { name: '80m Burpee Broad Jumps', duration: 230, color: '#feed00', order_index: 8, split_time: 1398 },
-      { name: '1km Run', duration: 202, color: '#feed00', order_index: 9, split_time: 1600 },
-      { name: '1000m Rowing', duration: 205, color: '#feed00', order_index: 10, split_time: 1805 },
-      { name: '1km Run', duration: 200, color: '#feed00', order_index: 11, split_time: 2005 },
-      { name: '200m Farmers Carry', duration: 287, color: '#feed00', order_index: 12, split_time: 2292 },
-      { name: '1km Run', duration: 210, color: '#feed00', order_index: 13, split_time: 2502 },
-      { name: '100m Sandbag Lunges', duration: 95, color: '#feed00', order_index: 14, split_time: 2597 },
-      { name: '1km Run', duration: 215, color: '#feed00', order_index: 15, split_time: 2812 },
-      { name: '100 Wall Balls', duration: 320, color: '#feed00', order_index: 16, split_time: 3132 }
-    ]
-  },
-  {
-    id: 2,
-    name: 'Lauren Weeks',
-    category: 'Women Pro',
-    total_time: 4234,
-    ranking: 1,
-    year: 2024,
-    location: 'World Championships',
-    lastUpdated: new Date().toISOString(),
-    events: [
-      { name: '1km Run', duration: 215, color: '#feed00', order_index: 1, split_time: 215 },
-      { name: '1000m SkiErg', duration: 245, color: '#feed00', order_index: 2, split_time: 460 },
-      { name: '1km Run', duration: 220, color: '#feed00', order_index: 3, split_time: 680 },
-      { name: '50m Sled Push', duration: 125, color: '#feed00', order_index: 4, split_time: 805 },
-      { name: '1km Run', duration: 225, color: '#feed00', order_index: 5, split_time: 1030 },
-      { name: '50m Sled Pull', duration: 130, color: '#feed00', order_index: 6, split_time: 1160 },
-      { name: '1km Run', duration: 228, color: '#feed00', order_index: 7, split_time: 1388 },
-      { name: '80m Burpee Broad Jumps', duration: 285, color: '#feed00', order_index: 8, split_time: 1673 },
-      { name: '1km Run', duration: 232, color: '#feed00', order_index: 9, split_time: 1905 },
-      { name: '1000m Rowing', duration: 240, color: '#feed00', order_index: 10, split_time: 2145 },
-      { name: '1km Run', duration: 235, color: '#feed00', order_index: 11, split_time: 2380 },
-      { name: '200m Farmers Carry', duration: 320, color: '#feed00', order_index: 12, split_time: 2700 },
-      { name: '1km Run', duration: 238, color: '#feed00', order_index: 13, split_time: 2938 },
-      { name: '100m Sandbag Lunges', duration: 155, color: '#feed00', order_index: 14, split_time: 3093 },
-      { name: '1km Run', duration: 242, color: '#feed00', order_index: 15, split_time: 3335 },
-      { name: '100 Wall Balls', duration: 380, color: '#feed00', order_index: 16, split_time: 3715 }
-    ]
-  }
-];
+let athletes = [];
 
 const SCRAPING_CONFIG = {
   baseUrls: [
