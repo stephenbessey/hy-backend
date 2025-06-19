@@ -25,7 +25,6 @@ class DatabaseManager {
   createTables() {
     return new Promise((resolve, reject) => {
       this.db.serialize(() => {
-        // Create athletes table
         this.db.run(`
           CREATE TABLE IF NOT EXISTS athletes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +45,6 @@ class DatabaseManager {
           }
         });
 
-        // Create events table
         this.db.run(`
           CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +64,6 @@ class DatabaseManager {
           }
         });
 
-        // Create indexes
         this.db.run(`CREATE INDEX IF NOT EXISTS idx_athletes_category ON athletes(category)`, (err) => {
           if (err) {
             console.error('Error creating athletes index:', err);
@@ -88,13 +85,11 @@ class DatabaseManager {
     });
   }
 
-  // Save scraped athletes to database
   async saveAthletes(athletesArray) {
-    // Wait for database to be ready
     await this.ready;
     
     return new Promise((resolve, reject) => {
-      const db = this.db; // Store reference to avoid context issues
+      const db = this.db;
       
       db.serialize(() => {
         db.run('BEGIN TRANSACTION');
@@ -104,7 +99,6 @@ class DatabaseManager {
         let completed = 0;
         
         athletesArray.forEach((athlete, index) => {
-          // Insert or update athlete
           db.run(`
             INSERT OR REPLACE INTO athletes (name, category, total_time, ranking, year, location, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -117,14 +111,12 @@ class DatabaseManager {
             
             const athleteId = this.lastID;
             
-            // Delete existing events for this athlete
             db.run('DELETE FROM events WHERE athlete_id = ?', [athleteId], (err) => {
               if (err) {
                 console.error('Error deleting old events:', err);
                 return;
               }
               
-              // Insert new events
               let eventsInserted = 0;
               if (athlete.events && athlete.events.length > 0) {
                 athlete.events.forEach((event, eventIndex) => {
@@ -137,7 +129,6 @@ class DatabaseManager {
                     }
                     eventsInserted++;
                     
-                    // Check if all events for this athlete are done
                     if (eventsInserted === athlete.events.length) {
                       completed++;
                       if (this.changes > 0) {
@@ -146,7 +137,6 @@ class DatabaseManager {
                         saved++;
                       }
                       
-                      // Commit when all athletes are processed
                       if (completed === athletesArray.length) {
                         db.run('COMMIT', (err) => {
                           if (err) {
@@ -161,7 +151,6 @@ class DatabaseManager {
                   });
                 });
               } else {
-                // No events to insert
                 completed++;
                 if (this.changes > 0) {
                   updated++;
@@ -169,7 +158,6 @@ class DatabaseManager {
                   saved++;
                 }
                 
-                // Commit when all athletes are processed
                 if (completed === athletesArray.length) {
                   db.run('COMMIT', (err) => {
                     if (err) {
@@ -188,9 +176,7 @@ class DatabaseManager {
     });
   }
 
-  // Load athletes from database
   async loadAthletes() {
-    // Wait for database to be ready
     await this.ready;
     
     return new Promise((resolve, reject) => {
@@ -219,7 +205,6 @@ class DatabaseManager {
           return;
         }
 
-        // Transform rows into athlete objects
         const athletesMap = new Map();
         
         rows.forEach(row => {
@@ -254,9 +239,7 @@ class DatabaseManager {
     });
   }
 
-  // Get database stats
   async getStats() {
-    // Wait for database to be ready
     await this.ready;
     
     return new Promise((resolve, reject) => {
