@@ -132,6 +132,7 @@ function transformScrapedData(scrapedData) {
       }
     });
     
+    // Determine category
     let category = 'Mixed';
     if (athlete.name.toLowerCase().includes('women') || athlete.name.toLowerCase().includes('female')) {
       category = 'Women Pro';
@@ -431,6 +432,9 @@ if (SCRAPING_CONFIG.enabled) {
 async function initializeFromDatabase() {
   try {
     console.log('🔄 Loading initial data from database...');
+    
+    await db.ready;
+    
     const dbAthletes = await db.loadAthletes();
     
     if (dbAthletes.length > 0) {
