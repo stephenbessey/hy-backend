@@ -4,11 +4,8 @@ const cron = require('node-cron');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const DatabaseManager = require('./database-integration');
-
 const app = express();
 const PORT = process.env.PORT || 10000;
-
-// Initialize database
 const db = new DatabaseManager();
 
 app.use(cors({
@@ -27,7 +24,6 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 
-// Configuration
 const SCRAPING_CONFIG = {
   enabled: true,
   timeout: 30000,
@@ -38,7 +34,6 @@ const SCRAPING_CONFIG = {
   ]
 };
 
-// In-memory athletes array (cached from database)
 let athletes = [];
 
 const workoutTemplates = [
@@ -60,88 +55,59 @@ const workoutTemplates = [
   }
 ];
 
-// Transform scraped data to match our format
 function transformScrapedData(scrapedData) {
   return scrapedData.map((athlete, index) => {
     const events = [];
     let totalTime = 0;
     let splitTime = 0;
     
-    // Map actual scraped event names to standard HYROX format
-    const eventMapping = {
-      'Running 1': '1km Run',
-      '1000m SkiErg': '1km SkiErg', 
-      'Running 2': '1km Run',
-      '50m Sled Push': '50m Sled Push',
-      'Running 3': '1km Run',
-      '50m Sled Pull': '50m Sled Pull',
-      'Running 4': '1km Run',
-      '80m Burpee Broad Jump': '80m Burpee Broad Jumps',
-      'Running 5': '1km Run',
-      '1000m Row': '100m Rowing',
-      'Running 6': '1km Run',
-      '200m Farmers Carry': '200m Farmers Carry',
-      'Running 7': '1km Run',
-      '100m Sandbag Lunges': '100m Sandbag Lunges',
-      'Running 8': '1km Run',
-      'Wall Balls': '100 Wall Balls'
-    };
+    const hyroxEventOrder = [
+      { scraped: 'Running 1', standard: '1km Run' },
+      { scraped: '1000m SkiErg', standard: '1km SkiErg' },
+      { scraped: 'Running 2', standard: '1km Run' },
+      { scraped: '50m Sled Push', standard: '50m Sled Push' },
+      { scraped: 'Running 3', standard: '1km Run' },
+      { scraped: '50m Sled Pull', standard: '50m Sled Pull' },
+      { scraped: 'Running 4', standard: '1km Run' },
+      { scraped: '80m Burpee Broad Jump', standard: '80m Burpee Broad Jumps' },
+      { scraped: 'Running 5', standard: '1km Run' },
+      { scraped: '1000m Row', standard: '100m Rowing' },
+      { scraped: 'Running 6', standard: '1km Run' },
+      { scraped: '200m Farmers Carry', standard: '200m Farmers Carry' },
+      { scraped: 'Running 7', standard: '1km Run' },
+      { scraped: '100m Sandbag Lunges', standard: '100m Sandbag Lunges' },
+      { scraped: 'Running 8', standard: '1km Run' },
+      { scraped: 'Wall Balls', standard: '100 Wall Balls' }
+    ];
     
-    // Process events in the order they appear in scraped data
-    const processedEvents = [];
-    
-    // First, get all the main workout events (excluding totals and roxzone)
-    Object.keys(athlete.data).forEach(scrapedEventName => {
-      const eventData = athlete.data[scrapedEventName];
-      
-      // Skip summary/total events and roxzone
-      if (scrapedEventName.includes('Total') || 
-          scrapedEventName.includes('Best') || 
-          scrapedEventName.includes('Roxzone')) {
-        return;
-      }
-      
-      // Map to standard name or use original if no mapping exists
-      const standardName = eventMapping[scrapedEventName] || scrapedEventName;
+    hyroxEventOrder.forEach((eventMapping, eventIndex) => {
+      const eventData = athlete.data[eventMapping.scraped];
       
       if (eventData && eventData.seconds > 0) {
-        processedEvents.push({
-          name: standardName,
+        splitTime += eventData.seconds;
+        events.push({
+          name: eventMapping.standard,
           duration: eventData.seconds,
           color: '#feed00',
-          originalName: scrapedEventName
+          order_index: eventIndex + 1,
+          split_time: splitTime
         });
         totalTime += eventData.seconds;
       }
     });
     
-    // Sort events to ensure proper order (runs should be interspersed with functional movements)
-    processedEvents.forEach((event, eventIndex) => {
-      splitTime += event.duration;
-      events.push({
-        name: event.name,
-        duration: event.duration,
-        color: '#feed00',
-        order_index: eventIndex + 1,
-        split_time: splitTime
-      });
-    });
-    
-    // Determine category from scraped data or athlete name
     let category = 'Mixed';
     const athleteName = athlete.name.toLowerCase();
     
-    // Look for gender indicators in the name or data
     if (athleteName.includes('women') || athleteName.includes('female') || athleteName.includes('(w)')) {
       category = 'Women Pro';
     } else if (athleteName.includes('men') || athleteName.includes('male') || athleteName.includes('(m)')) {
       category = 'Men Pro';
     } else {
-      // Default to Mixed if we can't determine
       category = 'Mixed';
     }
     
-    console.log(`🔄 Transformed ${athlete.name}: ${events.length} events, total: ${totalTime}s`);
+    console.log(`🔄 Transformed ${athlete.name}: ${events.length} events in correct HYROX order, total: ${totalTime}s`);
     
     return {
       id: athletes.length + index + 1,
@@ -156,7 +122,6 @@ function transformScrapedData(scrapedData) {
   });
 }
 
-// HyroxScraper Class
 class HyroxScraper {
   constructor() {
     this.axiosConfig = {
@@ -328,19 +293,16 @@ class HyroxScraper {
 
   timeToSeconds(timeStr) {
     if (!timeStr || typeof timeStr !== 'string') return 0;
-    
-    // Handle formats like "00:02:25" (HH:MM:SS) or "02:25" (MM:SS)
+
     const cleanTime = timeStr.replace(/[^\d:]/g, '');
     const parts = cleanTime.split(':');
     
     if (parts.length === 3) {
-      // HH:MM:SS format
       const hours = parseInt(parts[0]) || 0;
       const minutes = parseInt(parts[1]) || 0;
       const seconds = parseInt(parts[2]) || 0;
       return hours * 3600 + minutes * 60 + seconds;
     } else if (parts.length === 2) {
-      // MM:SS format
       const minutes = parseInt(parts[0]) || 0;
       const seconds = parseInt(parts[1]) || 0;
       return minutes * 60 + seconds;
@@ -405,7 +367,6 @@ class HyroxScraper {
   }
 }
 
-// Updated periodic scrape function with database integration
 async function performPeriodicScrape() {
   if (!SCRAPING_CONFIG.enabled) {
     console.log('⏸️ Scraping is disabled');
@@ -421,10 +382,8 @@ async function performPeriodicScrape() {
     if (scrapedData.length > 0) {
       const newAthletes = transformScrapedData(scrapedData);
       
-      // Save to database
       await db.saveAthletes(newAthletes);
       
-      // Update in-memory array (for compatibility)
       let updated = 0, added = 0;
       newAthletes.forEach(newAthlete => {
         const existingIndex = athletes.findIndex(a => a.name === newAthlete.name);
@@ -444,18 +403,15 @@ async function performPeriodicScrape() {
   }
 }
 
-// Schedule monthly scraping (1st day of each month at midnight)
 if (SCRAPING_CONFIG.enabled) {
   cron.schedule('0 0 1 * *', performPeriodicScrape);
   console.log('⏰ Scheduled scraping monthly (1st day of each month)');
 }
 
-// Load initial data from database on startup
 async function initializeFromDatabase() {
   try {
     console.log('🔄 Loading initial data from database...');
-    
-    // Wait for database to be ready first
+
     await db.ready;
     
     const dbAthletes = await db.loadAthletes();
@@ -472,7 +428,6 @@ async function initializeFromDatabase() {
   }
 }
 
-// API Routes
 app.get('/', (req, res) => {
   res.json({
     message: 'HYROX Simulator Backend API',
@@ -494,12 +449,10 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Updated athletes endpoint with database integration
 app.get('/api/athletes', async (req, res) => {
   try {
     const { category, year, limit } = req.query;
     
-    // Load from database if empty in memory
     if (athletes.length === 0) {
       console.log('🔄 Loading athletes from database...');
       const dbAthletes = await db.loadAthletes();
@@ -594,7 +547,6 @@ app.get('/api/stats/events', (req, res) => {
   res.json(eventStats);
 });
 
-// New database stats endpoint
 app.get('/api/stats/database', async (req, res) => {
   try {
     const stats = await db.getStats();
@@ -611,7 +563,6 @@ app.get('/api/stats/database', async (req, res) => {
   }
 });
 
-// Updated manual scrape endpoint with database integration
 app.post('/api/scrape', async (req, res) => {
   try {
     const { category = 'all', maxAthletes } = req.body;
@@ -625,10 +576,8 @@ app.post('/api/scrape', async (req, res) => {
     if (scrapedData.length > 0) {
       const newAthletes = transformScrapedData(scrapedData);
       
-      // Save to database
       const dbResult = await db.saveAthletes(newAthletes);
       
-      // Update in-memory array
       let updated = 0, added = 0;
       newAthletes.forEach(newAthlete => {
         const existingIndex = athletes.findIndex(a => a.name === newAthlete.name);
@@ -671,7 +620,6 @@ app.get('/api/scrape/status', (req, res) => {
   });
 });
 
-// User sessions
 let userSessions = [];
 
 app.post('/api/sessions', (req, res) => {
@@ -729,12 +677,10 @@ app.get('/api/docs', (req, res) => {
   });
 });
 
-// Start server with database initialization
 app.listen(PORT, async () => {
   console.log(`🚀 Enhanced Hyrox Simulator Backend running on port ${PORT}`);
   console.log(`🕷️ Scraping: ${SCRAPING_CONFIG.enabled ? 'ENABLED' : 'DISABLED'}`);
-  
-  // Initialize from database
+
   await initializeFromDatabase();
   console.log(`📊 Serving ${athletes.length} athletes`);
   
