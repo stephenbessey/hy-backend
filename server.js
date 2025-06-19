@@ -39,54 +39,7 @@ const SCRAPING_CONFIG = {
 };
 
 // In-memory athletes array (cached from database)
-let athletes = [
-  {
-    id: 1,
-    name: 'Hunter McIntyre',
-    category: 'Men Pro',
-    total_time: 3792,
-    ranking: 1,
-    year: 2024,
-    location: 'World Championships',
-    events: [
-      { name: '1km Run', duration: 185, color: '#feed00', order_index: 1, split_time: 185 },
-      { name: '1km SkiErg', duration: 215, color: '#feed00', order_index: 2, split_time: 400 },
-      { name: '1km Run', duration: 192, color: '#feed00', order_index: 3, split_time: 592 },
-      { name: '50m Sled Push', duration: 88, color: '#feed00', order_index: 4, split_time: 680 },
-      { name: '1km Run', duration: 200, color: '#feed00', order_index: 5, split_time: 880 },
-      { name: '50m Sled Pull', duration: 90, color: '#feed00', order_index: 6, split_time: 970 },
-      { name: '1km Run', duration: 198, color: '#feed00', order_index: 7, split_time: 1168 },
-      { name: '80m Burpee Broad Jumps', duration: 230, color: '#feed00', order_index: 8, split_time: 1398 },
-      { name: '1km Run', duration: 202, color: '#feed00', order_index: 9, split_time: 1600 },
-      { name: '100m Rowing', duration: 205, color: '#feed00', order_index: 10, split_time: 1805 },
-      { name: '1km Run', duration: 200, color: '#feed00', order_index: 11, split_time: 2005 },
-      { name: '200m Farmers Carry', duration: 190, color: '#feed00', order_index: 12, split_time: 2195 },
-      { name: '1km Run', duration: 205, color: '#feed00', order_index: 13, split_time: 2400 },
-      { name: '100m Sandbag Lunges', duration: 260, color: '#feed00', order_index: 14, split_time: 2660 },
-      { name: '1km Run', duration: 210, color: '#feed00', order_index: 15, split_time: 2870 },
-      { name: '100 Wall Balls', duration: 545, color: '#feed00', order_index: 16, split_time: 3415 }
-    ]
-  },
-  {
-    id: 2,
-    name: 'Laura Horvath',
-    category: 'Women Pro',
-    total_time: 4200,
-    ranking: 1,
-    year: 2024,
-    location: 'World Championships',
-    events: [
-      { name: '1km Run', duration: 220, color: '#feed00' },
-      { name: '1km SkiErg', duration: 250, color: '#feed00' },
-      { name: '1km Run', duration: 225, color: '#feed00' },
-      { name: '50m Sled Push', duration: 100, color: '#feed00' },
-      { name: '1km Run', duration: 230, color: '#feed00' },
-      { name: '50m Sled Pull', duration: 105, color: '#feed00' },
-      { name: '1km Run', duration: 235, color: '#feed00' },
-      { name: '80m Burpee Broad Jumps', duration: 300, color: '#feed00' }
-    ]
-  }
-];
+let athletes = [];
 
 const workoutTemplates = [
   {
@@ -114,36 +67,81 @@ function transformScrapedData(scrapedData) {
     let totalTime = 0;
     let splitTime = 0;
     
-    // Define standard HYROX events in order
-    const standardEvents = [
-      '1km Run', '1000m SkiErg', '1km Run', '50m Sled Push',
-      '1km Run', '50m Sled Pull', '1km Run', '80m Burpee Broad Jumps',
-      '1km Run', '100m Rowing', '1km Run', '200m Farmers Carry',
-      '1km Run', '100m Sandbag Lunges', '1km Run', '100 Wall Balls'
-    ];
+    // Map actual scraped event names to standard HYROX format
+    const eventMapping = {
+      'Running 1': '1km Run',
+      '1000m SkiErg': '1km SkiErg', 
+      'Running 2': '1km Run',
+      '50m Sled Push': '50m Sled Push',
+      'Running 3': '1km Run',
+      '50m Sled Pull': '50m Sled Pull',
+      'Running 4': '1km Run',
+      '80m Burpee Broad Jump': '80m Burpee Broad Jumps',
+      'Running 5': '1km Run',
+      '1000m Row': '100m Rowing',
+      'Running 6': '1km Run',
+      '200m Farmers Carry': '200m Farmers Carry',
+      'Running 7': '1km Run',
+      '100m Sandbag Lunges': '100m Sandbag Lunges',
+      'Running 8': '1km Run',
+      'Wall Balls': '100 Wall Balls'
+    };
     
-    standardEvents.forEach((eventName, eventIndex) => {
-      const eventData = athlete.data[eventName];
+    // Process events in the order they appear in scraped data
+    const processedEvents = [];
+    
+    // First, get all the main workout events (excluding totals and roxzone)
+    Object.keys(athlete.data).forEach(scrapedEventName => {
+      const eventData = athlete.data[scrapedEventName];
+      
+      // Skip summary/total events and roxzone
+      if (scrapedEventName.includes('Total') || 
+          scrapedEventName.includes('Best') || 
+          scrapedEventName.includes('Roxzone')) {
+        return;
+      }
+      
+      // Map to standard name or use original if no mapping exists
+      const standardName = eventMapping[scrapedEventName] || scrapedEventName;
+      
       if (eventData && eventData.seconds > 0) {
-        splitTime += eventData.seconds;
-        events.push({
-          name: eventName,
+        processedEvents.push({
+          name: standardName,
           duration: eventData.seconds,
           color: '#feed00',
-          order_index: eventIndex + 1,
-          split_time: splitTime
+          originalName: scrapedEventName
         });
         totalTime += eventData.seconds;
       }
     });
     
-    // Determine category
+    // Sort events to ensure proper order (runs should be interspersed with functional movements)
+    processedEvents.forEach((event, eventIndex) => {
+      splitTime += event.duration;
+      events.push({
+        name: event.name,
+        duration: event.duration,
+        color: '#feed00',
+        order_index: eventIndex + 1,
+        split_time: splitTime
+      });
+    });
+    
+    // Determine category from scraped data or athlete name
     let category = 'Mixed';
-    if (athlete.name.toLowerCase().includes('women') || athlete.name.toLowerCase().includes('female')) {
+    const athleteName = athlete.name.toLowerCase();
+    
+    // Look for gender indicators in the name or data
+    if (athleteName.includes('women') || athleteName.includes('female') || athleteName.includes('(w)')) {
       category = 'Women Pro';
-    } else if (athlete.name.toLowerCase().includes('men') || athlete.name.toLowerCase().includes('male')) {
+    } else if (athleteName.includes('men') || athleteName.includes('male') || athleteName.includes('(m)')) {
       category = 'Men Pro';
+    } else {
+      // Default to Mixed if we can't determine
+      category = 'Mixed';
     }
+    
+    console.log(`🔄 Transformed ${athlete.name}: ${events.length} events, total: ${totalTime}s`);
     
     return {
       id: athletes.length + index + 1,
