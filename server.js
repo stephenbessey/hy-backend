@@ -138,6 +138,7 @@ class ImprovedTimingParser {
   }
 }
 
+
 class AthleteDataValidator {
   static validateAthleteStructure(athlete) {
     const errors = [];
@@ -766,6 +767,7 @@ class HyroxScraper {
   timeToSeconds(timeStr) {
     const result = ImprovedTimingParser.cleanScrapedTimeData(timeStr, 'Unknown Event');
     return result ? result.seconds : 0;
+
   }
 
   async scrapeAthletes(baseUrl, maxAthletes = 10) {
@@ -1245,6 +1247,7 @@ app.post('/api/sessions', validationMiddleware.validateSessionData, (req, res) =
   }
   
   res.json({ success: true, session: sessionData });
+
 });
 
 app.get('/api/sessions/:userId', (req, res) => {
@@ -1284,6 +1287,7 @@ app.get('/api/docs', (req, res) => {
         ]
       }
     },
+
     endpoints: {
       'GET /': 'API info',
       'GET /health': 'Health check',
@@ -1306,6 +1310,7 @@ app.get('/api/docs', (req, res) => {
       validation: 'Data quality scoring, structure validation, timing consistency checks',
       parsing: 'Enhanced timing parser for better accuracy',
       compatibility: 'Full backward compatibility maintained'
+
     }
   });
 });
@@ -1314,6 +1319,7 @@ app.listen(PORT, async () => {
   console.log(`🚀 Enhanced Hyrox Simulator Backend running on port ${PORT}`);
   console.log(`🕷️ Scraping: ${SCRAPING_CONFIG.enabled ? 'ENABLED' : 'DISABLED'}`);
   console.log(`🔧 Version: 2.1.0 - Enhanced timing parser + validation system active`);
+
 
   await initializeFromDatabase();
   console.log(`📊 Serving ${athletes.length} athletes`);

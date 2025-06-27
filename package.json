@@ -9,11 +9,12 @@
     "test": "node test-backend.js"
   },
   "dependencies": {
-    "axios": "^1.10.0",
-    "cheerio": "^1.1.0",
-    "cors": "^2.8.5",
     "express": "^4.21.2",
-    "node-cron": "^3.0.3"
+    "cors": "^2.8.5",
+    "sqlite3": "^5.1.6",
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12"
   },
   "engines": {
     "node": ">=16.0.0"
@@ -24,10 +25,9 @@
     "timer",
     "backend",
     "api",
-    "scraping",
     "live-data"
   ],
-  "author": "",
+  "author": "Stephen",
   "license": "MIT",
   "devDependencies": {
     "punycode": "^2.3.1"
