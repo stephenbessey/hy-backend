@@ -12,7 +12,6 @@ app.use(cors());
 app.use(express.json());
 
 class ImprovedTimingParser {
-
   static parseTimeToSeconds(timeStr) {
     if (!timeStr || typeof timeStr !== 'string') {
       console.warn('Invalid time string provided:', timeStr);
@@ -43,7 +42,7 @@ class ImprovedTimingParser {
 
   static convertMatchToSeconds(match, pattern) {
     const groups = match.slice(1);
-
+    
     if (groups.length >= 3 && groups[0] && groups[1] && groups[2]) {
       const hours = parseInt(groups[0]) || 0;
       const minutes = parseInt(groups[1]) || 0;
@@ -53,7 +52,7 @@ class ImprovedTimingParser {
       const totalSeconds = hours * 3600 + minutes * 60 + seconds;
       return totalSeconds + (milliseconds / 1000);
     }
-
+    
     if (groups.length >= 2 && groups[0] && groups[1]) {
       const minutes = parseInt(groups[0]) || 0;
       const seconds = parseInt(groups[1]) || 0;
@@ -62,7 +61,7 @@ class ImprovedTimingParser {
       const totalSeconds = minutes * 60 + seconds;
       return totalSeconds + (milliseconds / 1000);
     }
-
+    
     if (groups.length >= 1 && groups[0]) {
       const seconds = parseInt(groups[0]) || 0;
       const milliseconds = groups[1] ? this.normalizeMilliseconds(groups[1]) : 0;
@@ -75,7 +74,7 @@ class ImprovedTimingParser {
 
   static normalizeMilliseconds(msStr) {
     if (!msStr) return 0;
-
+    
     if (msStr.length === 1) return parseInt(msStr) * 100;
     if (msStr.length === 2) return parseInt(msStr) * 10;
     if (msStr.length === 3) return parseInt(msStr);
@@ -87,21 +86,19 @@ class ImprovedTimingParser {
   static fallbackTimeConversion(timeStr) {
     const numbers = timeStr.match(/\d+/g);
     if (!numbers || numbers.length === 0) return 0;
-
+    
     if (numbers.length === 1) {
       const value = parseInt(numbers[0]);
       return value;
     }
     
     if (numbers.length === 2) {
-
       const minutes = parseInt(numbers[0]) || 0;
       const seconds = parseInt(numbers[1]) || 0;
       return minutes * 60 + seconds;
     }
     
     if (numbers.length >= 3) {
-
       const hours = parseInt(numbers[0]) || 0;
       const minutes = parseInt(numbers[1]) || 0;
       const seconds = parseInt(numbers[2]) || 0;
@@ -115,10 +112,10 @@ class ImprovedTimingParser {
     if (!timeStr) return null;
 
     let cleaned = timeStr
-      .replace(/^\s*[-–—]\s*/, '') 
+      .replace(/^\s*[-–—]\s*/, '')
       .replace(/\s*[-–—]\s*$/, '')
-      .replace(/[^\d:.,]/g, '')  
-      .replace(/,/g, '.')     
+      .replace(/[^\d:.,]/g, '')
+      .replace(/,/g, '.')
       .trim();
 
     if (!cleaned || cleaned === '.' || cleaned === ':') {
@@ -141,6 +138,306 @@ class ImprovedTimingParser {
   }
 }
 
+class AthleteDataValidator {
+  static validateAthleteStructure(athlete) {
+    const errors = [];
+    const warnings = [];
+    
+    if (!athlete.name || typeof athlete.name !== 'string') {
+      errors.push('Missing or invalid athlete name');
+    }
+    
+    if (!athlete.id) {
+      errors.push('Missing athlete ID');
+    }
+    
+    if (!athlete.category || typeof athlete.category !== 'string') {
+      warnings.push('Missing or invalid category');
+    }
+    
+    if (!athlete.total_time || typeof athlete.total_time !== 'number') {
+      errors.push('Missing or invalid total_time');
+    }
+    
+    if (!Array.isArray(athlete.events)) {
+      errors.push('Events must be an array');
+    } else {
+      athlete.events.forEach((event, index) => {
+        if (!event.name) {
+          errors.push(`Event ${index + 1}: Missing event name`);
+        }
+        if (typeof event.duration !== 'number' || event.duration <= 0) {
+          errors.push(`Event ${index + 1}: Invalid duration`);
+        }
+      });
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings,
+      score: this.calculateDataQualityScore(athlete, errors, warnings)
+    };
+  }
+
+  static calculateDataQualityScore(athlete, errors = [], warnings = []) {
+    let score = 100;
+    
+    score -= errors.length * 25;
+    score -= warnings.length * 10;
+    
+    if (!athlete.events || !Array.isArray(athlete.events)) {
+      return Math.max(0, score);
+    }
+    
+    const expectedEventCount = 16;
+    if (athlete.events.length < expectedEventCount) {
+      const missingEvents = expectedEventCount - athlete.events.length;
+      score -= missingEvents * 3;
+    }
+    
+    let suspiciousEvents = 0;
+    athlete.events.forEach(event => {
+      if (event.duration < 30 || event.duration > 1800) {
+        suspiciousEvents++;
+      }
+    });
+    score -= suspiciousEvents * 5;
+    
+    const sumOfEvents = athlete.events.reduce((sum, event) => sum + event.duration, 0);
+    const totalTimeDiff = Math.abs(sumOfEvents - athlete.total_time);
+    if (totalTimeDiff > 60) {
+      score -= 10;
+    }
+    
+    return Math.max(0, Math.min(100, score));
+  }
+
+  static validateEventTiming(athlete) {
+    if (!athlete.events || !Array.isArray(athlete.events)) {
+      return { isValid: false, issues: ['No events to validate'] };
+    }
+
+    const issues = [];
+    const eventNames = new Set();
+    
+    athlete.events.forEach(event => {
+      if (eventNames.has(event.name)) {
+        issues.push(`Duplicate event: ${event.name}`);
+      }
+      eventNames.add(event.name);
+    });
+    
+    const hasSkiErg = athlete.events.some(e => e.name.toLowerCase().includes('skierg'));
+    const hasSledPush = athlete.events.some(e => e.name.toLowerCase().includes('sled push'));
+    const hasSledPull = athlete.events.some(e => e.name.toLowerCase().includes('sled pull'));
+    const hasBurpees = athlete.events.some(e => e.name.toLowerCase().includes('burpee'));
+    const hasWallBalls = athlete.events.some(e => e.name.toLowerCase().includes('wall ball'));
+    
+    const majorComponents = [hasSkiErg, hasSledPush, hasSledPull, hasBurpees, hasWallBalls];
+    const missingComponents = majorComponents.filter(comp => !comp).length;
+    
+    if (missingComponents > 0) {
+      issues.push(`Missing ${missingComponents} major HYROX components`);
+    }
+
+    return {
+      isValid: issues.length === 0,
+      issues,
+      completeness: {
+        totalEvents: athlete.events.length,
+        expectedEvents: 16,
+        hasSkiErg,
+        hasSledPush,
+        hasSledPull,
+        hasBurpees,
+        hasWallBalls
+      }
+    };
+  }
+
+  static enhanceAthleteData(athlete, includeValidation = false) {
+    if (!includeValidation) {
+      return athlete;
+    }
+
+    const structureValidation = this.validateAthleteStructure(athlete);
+    const timingValidation = this.validateEventTiming(athlete);
+
+    return {
+      ...athlete,
+      validation: {
+        structure: structureValidation,
+        timing: timingValidation,
+        dataQualityScore: structureValidation.score,
+        lastValidated: new Date().toISOString()
+      }
+    };
+  }
+}
+
+const validationMiddleware = {
+  validateAthleteQuery: (req, res, next) => {
+    const { category, year, limit } = req.query;
+    const errors = [];
+
+    if (category && !['all', 'men', 'women', 'mixed'].includes(category.toLowerCase())) {
+      errors.push('Invalid category. Must be: all, men, women, or mixed');
+    }
+
+    if (year) {
+      const yearNum = parseInt(year);
+      if (isNaN(yearNum) || yearNum < 2020 || yearNum > new Date().getFullYear() + 1) {
+        errors.push('Invalid year. Must be between 2020 and current year + 1');
+      }
+    }
+
+    if (limit) {
+      const limitNum = parseInt(limit);
+      if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+        errors.push('Invalid limit. Must be between 1 and 100');
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: errors
+      });
+    }
+
+    next();
+  },
+
+  validateAthleteId: (req, res, next) => {
+    const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({
+        error: 'Athlete ID is required'
+      });
+    }
+
+    const idNum = parseInt(id);
+    if (isNaN(idNum) || idNum < 1) {
+      return res.status(400).json({
+        error: 'Invalid athlete ID. Must be a positive integer'
+      });
+    }
+
+    next();
+  },
+
+  validateSessionData: (req, res, next) => {
+    const { userId, athleteId, eventIndex, timeRemaining, totalElapsed } = req.body;
+    const errors = [];
+
+    if (!userId || typeof userId !== 'string') {
+      errors.push('Invalid userId. Must be a non-empty string');
+    }
+
+    if (!athleteId || isNaN(parseInt(athleteId))) {
+      errors.push('Invalid athleteId. Must be a valid number');
+    }
+
+    if (eventIndex !== undefined && (isNaN(parseInt(eventIndex)) || parseInt(eventIndex) < 0)) {
+      errors.push('Invalid eventIndex. Must be a non-negative number');
+    }
+
+    if (timeRemaining !== undefined && (isNaN(parseInt(timeRemaining)) || parseInt(timeRemaining) < 0)) {
+      errors.push('Invalid timeRemaining. Must be a non-negative number');
+    }
+
+    if (totalElapsed !== undefined && (isNaN(parseInt(totalElapsed)) || parseInt(totalElapsed) < 0)) {
+      errors.push('Invalid totalElapsed. Must be a non-negative number');
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        error: 'Session validation failed',
+        details: errors
+      });
+    }
+
+    next();
+  }
+};
+
+function enhanceResponse(data, options = {}) {
+  const { includeValidation = false, includeMetadata = false } = options;
+
+  if (Array.isArray(data)) {
+    const enhancedData = data.map(athlete => 
+      AthleteDataValidator.enhanceAthleteData(athlete, includeValidation)
+    );
+
+    if (includeMetadata) {
+      return {
+        data: enhancedData,
+        metadata: {
+          count: enhancedData.length,
+          validationIncluded: includeValidation,
+          generatedAt: new Date().toISOString()
+        }
+      };
+    }
+
+    return enhancedData;
+  } else {
+    const enhancedData = AthleteDataValidator.enhanceAthleteData(data, includeValidation);
+
+    if (includeMetadata) {
+      return {
+        data: enhancedData,
+        metadata: {
+          validationIncluded: includeValidation,
+          generatedAt: new Date().toISOString()
+        }
+      };
+    }
+
+    return enhancedData;
+  }
+}
+
+function generateRecommendations(structureValidation, timingValidation) {
+  const recommendations = [];
+
+  if (!structureValidation.isValid) {
+    recommendations.push({
+      type: 'error',
+      message: 'Fix data structure issues',
+      details: structureValidation.errors
+    });
+  }
+
+  if (structureValidation.warnings.length > 0) {
+    recommendations.push({
+      type: 'warning',
+      message: 'Address data quality warnings',
+      details: structureValidation.warnings
+    });
+  }
+
+  if (!timingValidation.isValid) {
+    recommendations.push({
+      type: 'timing',
+      message: 'Review event timing data',
+      details: timingValidation.issues
+    });
+  }
+
+  if (structureValidation.score < 70) {
+    recommendations.push({
+      type: 'improvement',
+      message: 'Consider re-scraping this athlete data for better quality',
+      details: [`Current quality score: ${structureValidation.score}/100`]
+    });
+  }
+
+  return recommendations;
+}
+
 const SCRAPING_CONFIG = {
   enabled: process.env.SCRAPING_ENABLED !== 'false',
   maxAthletes: parseInt(process.env.MAX_ATHLETES) || 20,
@@ -149,8 +446,62 @@ const SCRAPING_CONFIG = {
   retries: 3
 };
 
-let athletes = []
-
+let athletes = [
+  {
+    id: 1,
+    name: 'Hunter McIntyre',
+    category: 'Men Pro',
+    total_time: 3720,
+    ranking: 1,
+    year: 2024,
+    location: 'HYROX World Championships',
+    events: [
+      { name: '1km Run', duration: 240, color: '#feed00' },
+      { name: '1km SkiErg', duration: 300, color: '#feed00' },
+      { name: '1km Run', duration: 250, color: '#feed00' },
+      { name: '50m Sled Push', duration: 120, color: '#feed00' },
+      { name: '1km Run', duration: 260, color: '#feed00' },
+      { name: '50m Sled Pull', duration: 110, color: '#feed00' },
+      { name: '1km Run', duration: 270, color: '#feed00' },
+      { name: '80m Burpee Broad Jumps', duration: 420, color: '#feed00' },
+      { name: '1km Run', duration: 280, color: '#feed00' },
+      { name: '100m Rowing', duration: 200, color: '#feed00' },
+      { name: '1km Run', duration: 290, color: '#feed00' },
+      { name: '200m Farmers Carry', duration: 150, color: '#feed00' },
+      { name: '1km Run', duration: 300, color: '#feed00' },
+      { name: '100m Sandbag Lunges', duration: 180, color: '#feed00' },
+      { name: '1km Run', duration: 310, color: '#feed00' },
+      { name: '100 Wall Balls', duration: 360, color: '#feed00' }
+    ]
+  },
+  {
+    id: 2,
+    name: 'Lauren Weeks',
+    category: 'Women Pro',
+    total_time: 4200,
+    ranking: 1,
+    year: 2024,
+    location: 'HYROX World Championships',
+    events: [
+      { name: '1km Run', duration: 280, color: '#feed00' },
+      { name: '1km SkiErg', duration: 320, color: '#feed00' },
+      { name: '1km Run', duration: 290, color: '#feed00' },
+      { name: '50m Sled Push', duration: 140, color: '#feed00' },
+      { name: '1km Run', duration: 300, color: '#feed00' },
+      { name: '50m Sled Pull', duration: 130, color: '#feed00' },
+      { name: '1km Run', duration: 310, color: '#feed00' },
+      { name: '80m Burpee Broad Jumps', duration: 460, color: '#feed00' },
+      { name: '1km Run', duration: 320, color: '#feed00' },
+      { name: '100m Rowing', duration: 220, color: '#feed00' },
+      { name: '1km Run', duration: 330, color: '#feed00' },
+      { name: '200m Farmers Carry', duration: 170, color: '#feed00' },
+      { name: '1km Run', duration: 340, color: '#feed00' },
+      { name: '100m Sandbag Lunges', duration: 200, color: '#feed00' },
+      { name: '1km Run', duration: 350, color: '#feed00' },
+      { name: '100 Wall Balls', duration: 380, color: '#feed00' }
+    ]
+  }
+];
 
 const workoutTemplates = [
   {
@@ -310,7 +661,7 @@ class HyroxScraper {
       data: {},
       lastUpdated: new Date().toISOString(),
       parsingErrors: [],
-      parsingMethod: 'enhanced' 
+      parsingMethod: 'enhanced'
     };
 
     console.log(`   📊 Parsing results for: ${name} (Enhanced Parser)`);
@@ -368,10 +719,10 @@ class HyroxScraper {
               if (timeData && timeData.seconds > 0) {
                 athlete.data[event] = {
                   time: timeData.originalText,
-                  cleanedTime: timeData.cleanedText, 
+                  cleanedTime: timeData.cleanedText,
                   place: place,
                   seconds: timeData.seconds,
-                  isValid: timeData.isValid, 
+                  isValid: timeData.isValid,
                   parsingMethod: 'enhanced'
                 };
                 console.log(`       ✅ SAVED (Enhanced): ${event} = ${timeData.originalText} -> ${timeData.seconds}s (place: ${place || 'N/A'})`);
@@ -537,9 +888,8 @@ async function initializeFromDatabase() {
 app.get('/', (req, res) => {
   res.json({
     message: 'HYROX Simulator Backend API',
-    version: '2.0.1', 
-    changes: 'Enhanced timing parser for better data accuracy', 
-    features: ['Live Data Scraping', 'Athlete Management', 'Database Storage', 'Enhanced Timing Accuracy'],
+    version: '2.1.0',
+    features: ['Live Data Scraping', 'Athlete Management', 'Database Storage', 'Enhanced Timing Accuracy', 'Data Validation System'],
     status: 'running',
     scraping: { enabled: SCRAPING_CONFIG.enabled }
   });
@@ -550,15 +900,16 @@ app.get('/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     message: 'Hyrox Simulator Backend is running',
-    version: '2.0.1',
+    version: '2.1.0',
     athletes_count: athletes.length,
-    scraping_enabled: SCRAPING_CONFIG.enabled
+    scraping_enabled: SCRAPING_CONFIG.enabled,
+    validation_enabled: true
   });
 });
 
-app.get('/api/athletes', async (req, res) => {
+app.get('/api/athletes', validationMiddleware.validateAthleteQuery, async (req, res) => {
   try {
-    const { category, year, limit } = req.query;
+    const { category, year, limit, includeValidation, includeMetadata } = req.query;
     
     if (athletes.length === 0) {
       console.log('🔄 Loading athletes from database...');
@@ -578,14 +929,41 @@ app.get('/api/athletes', async (req, res) => {
       filteredAthletes = filteredAthletes.slice(0, parseInt(limit));
     }
     
-    res.json(filteredAthletes);
+    const enhancedData = enhanceResponse(filteredAthletes, {
+      includeValidation: includeValidation === 'true',
+      includeMetadata: includeMetadata === 'true'
+    });
+    
+    res.json(enhancedData);
   } catch (error) {
     console.error('Error serving athletes:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.get('/api/athletes/:id', (req, res) => {
+app.get('/api/athletes/:id', validationMiddleware.validateAthleteId, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { includeValidation, includeMetadata } = req.query;
+    const athlete = athletes.find(a => a.id === parseInt(id));
+    
+    if (!athlete) {
+      return res.status(404).json({ error: 'Athlete not found' });
+    }
+    
+    const enhancedData = enhanceResponse(athlete, {
+      includeValidation: includeValidation === 'true',
+      includeMetadata: includeMetadata === 'true'
+    });
+    
+    res.json(enhancedData);
+  } catch (error) {
+    console.error('Error serving athlete:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/athletes/:id/validation', validationMiddleware.validateAthleteId, (req, res) => {
   try {
     const { id } = req.params;
     const athlete = athletes.find(a => a.id === parseInt(id));
@@ -593,16 +971,125 @@ app.get('/api/athletes/:id', (req, res) => {
     if (!athlete) {
       return res.status(404).json({ error: 'Athlete not found' });
     }
-    
-    res.json(athlete);
+
+    const structureValidation = AthleteDataValidator.validateAthleteStructure(athlete);
+    const timingValidation = AthleteDataValidator.validateEventTiming(athlete);
+
+    res.json({
+      athleteId: athlete.id,
+      athleteName: athlete.name,
+      validation: {
+        structure: structureValidation,
+        timing: timingValidation,
+        dataQualityScore: structureValidation.score,
+        lastValidated: new Date().toISOString()
+      },
+      recommendations: generateRecommendations(structureValidation, timingValidation)
+    });
   } catch (error) {
-    console.error('Error serving athlete:', error);
+    console.error('Error validating athlete:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.get('/api/leaderboard', (req, res) => {
-  const { category = 'all', limit = 10 } = req.query;
+app.post('/api/validation/batch', (req, res) => {
+  try {
+    const { athleteIds } = req.body;
+    
+    if (!Array.isArray(athleteIds)) {
+      return res.status(400).json({
+        error: 'athleteIds must be an array'
+      });
+    }
+
+    if (athleteIds.length > 50) {
+      return res.status(400).json({
+        error: 'Maximum 50 athletes can be validated at once'
+      });
+    }
+
+    const results = [];
+    const notFound = [];
+
+    athleteIds.forEach(id => {
+      const athlete = athletes.find(a => a.id === parseInt(id));
+      if (!athlete) {
+        notFound.push(id);
+        return;
+      }
+
+      const structureValidation = AthleteDataValidator.validateAthleteStructure(athlete);
+      const timingValidation = AthleteDataValidator.validateEventTiming(athlete);
+
+      results.push({
+        athleteId: athlete.id,
+        athleteName: athlete.name,
+        dataQualityScore: structureValidation.score,
+        isValid: structureValidation.isValid && timingValidation.isValid,
+        errorCount: structureValidation.errors.length,
+        warningCount: structureValidation.warnings.length,
+        issueCount: timingValidation.issues.length
+      });
+    });
+
+    res.json({
+      results,
+      notFound,
+      summary: {
+        total: results.length,
+        valid: results.filter(r => r.isValid).length,
+        averageScore: results.reduce((sum, r) => sum + r.dataQualityScore, 0) / results.length || 0
+      }
+    });
+  } catch (error) {
+    console.error('Error in batch validation:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/validation/stats', (req, res) => {
+  try {
+    const validationStats = {
+      totalAthletes: athletes.length,
+      validatedAthletes: 0,
+      averageQualityScore: 0,
+      qualityDistribution: {
+        excellent: 0,
+        good: 0,
+        fair: 0,
+        poor: 0
+      },
+      commonIssues: {},
+      lastUpdated: new Date().toISOString()
+    };
+
+    let totalScore = 0;
+    athletes.forEach(athlete => {
+      const validation = AthleteDataValidator.validateAthleteStructure(athlete);
+      totalScore += validation.score;
+      validationStats.validatedAthletes++;
+
+      if (validation.score >= 90) validationStats.qualityDistribution.excellent++;
+      else if (validation.score >= 70) validationStats.qualityDistribution.good++;
+      else if (validation.score >= 50) validationStats.qualityDistribution.fair++;
+      else validationStats.qualityDistribution.poor++;
+
+      [...validation.errors, ...validation.warnings].forEach(issue => {
+        validationStats.commonIssues[issue] = (validationStats.commonIssues[issue] || 0) + 1;
+      });
+    });
+
+    validationStats.averageQualityScore = totalScore / athletes.length || 0;
+
+    res.json(validationStats);
+  } catch (error) {
+    console.error('Error getting validation stats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/leaderboard', validationMiddleware.validateAthleteQuery, (req, res) => {
+  const { category = 'all', limit = 10, includeValidation, includeMetadata } = req.query;
   
   let leaderboard = athletes;
   
@@ -620,7 +1107,12 @@ app.get('/api/leaderboard', (req, res) => {
       position: index + 1
     }));
   
-  res.json(leaderboard);
+  const enhancedData = enhanceResponse(leaderboard, {
+    includeValidation: includeValidation === 'true',
+    includeMetadata: includeMetadata === 'true'
+  });
+  
+  res.json(enhancedData);
 });
 
 app.get('/api/templates', (req, res) => {
@@ -726,13 +1218,14 @@ app.get('/api/scrape/status', (req, res) => {
     last_update: athletes[0]?.lastUpdated || 'Never',
     total_athletes: athletes.length,
     parsingMethod: 'enhanced',
-    version: '2.0.1' 
+    validationEnabled: true,
+    version: '2.1.0'
   });
 });
 
 let userSessions = [];
 
-app.post('/api/sessions', (req, res) => {
+app.post('/api/sessions', validationMiddleware.validateSessionData, (req, res) => {
   const { userId, athleteId, eventIndex, timeRemaining, totalElapsed } = req.body;
   
   const sessionIndex = userSessions.findIndex(s => s.userId === userId);
@@ -768,8 +1261,18 @@ app.get('/api/sessions/:userId', (req, res) => {
 app.get('/api/docs', (req, res) => {
   res.json({
     title: 'HYROX Simulator API',
-    version: '2.0.1',
+    version: '2.1.0',
     changelog: {
+      '2.1.0': {
+        type: 'MINOR',
+        changes: [
+          'Added data validation system',
+          'New validation endpoints: /api/athletes/:id/validation, /api/validation/batch, /api/validation/stats',
+          'Enhanced existing endpoints with optional validation metadata',
+          'Added input validation middleware',
+          'Improved error messages and data quality scoring'
+        ]
+      },
       '2.0.1': {
         type: 'PATCH',
         changes: [
@@ -784,21 +1287,24 @@ app.get('/api/docs', (req, res) => {
     endpoints: {
       'GET /': 'API info',
       'GET /health': 'Health check',
-      'GET /api/athletes': 'Get all athletes (supports ?category= and ?year= filters)',
-      'GET /api/athletes/:id': 'Get specific athlete',
-      'GET /api/leaderboard': 'Get leaderboard (supports ?category= and ?limit= params)',
+      'GET /api/athletes': 'Get all athletes (supports ?category=, ?year=, ?limit=, ?includeValidation=, ?includeMetadata=)',
+      'GET /api/athletes/:id': 'Get specific athlete (supports ?includeValidation=, ?includeMetadata=)',
+      'GET /api/athletes/:id/validation': 'Get detailed validation for specific athlete',
+      'POST /api/validation/batch': 'Batch validate multiple athletes',
+      'GET /api/validation/stats': 'Get system-wide validation statistics',
+      'GET /api/leaderboard': 'Get leaderboard (supports ?category=, ?limit=, ?includeValidation=, ?includeMetadata=)',
       'GET /api/templates': 'Get workout templates',
       'GET /api/stats/events': 'Get event statistics',
       'GET /api/stats/database': 'Get database statistics',
-      'POST /api/scrape': 'Manual scrape trigger (now with enhanced parsing)',
-      'GET /api/scrape/status': 'Get scraping status (includes parsing method info)',
-      'POST /api/sessions': 'Create/update user session',
+      'POST /api/scrape': 'Manual scrape trigger (enhanced parsing)',
+      'GET /api/scrape/status': 'Get scraping status (includes validation info)',
+      'POST /api/sessions': 'Create/update user session (enhanced validation)',
       'GET /api/sessions/:userId': 'Get user session',
       'GET /api/docs': 'This documentation'
     },
-    improvements: {
-      timingAccuracy: 'Enhanced parser handles decimals, European formats, and edge cases',
-      dataQuality: 'Better validation and error tracking for scraped data',
+    features: {
+      validation: 'Data quality scoring, structure validation, timing consistency checks',
+      parsing: 'Enhanced timing parser for better accuracy',
       compatibility: 'Full backward compatibility maintained'
     }
   });
@@ -807,7 +1313,7 @@ app.get('/api/docs', (req, res) => {
 app.listen(PORT, async () => {
   console.log(`🚀 Enhanced Hyrox Simulator Backend running on port ${PORT}`);
   console.log(`🕷️ Scraping: ${SCRAPING_CONFIG.enabled ? 'ENABLED' : 'DISABLED'}`);
-  console.log(`🔧 Version: 2.0.1 - Enhanced timing parser active`);
+  console.log(`🔧 Version: 2.1.0 - Enhanced timing parser + validation system active`);
 
   await initializeFromDatabase();
   console.log(`📊 Serving ${athletes.length} athletes`);
