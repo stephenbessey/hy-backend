@@ -141,6 +141,8 @@ class ImprovedTimingParser {
   }
 }
 
+
+
 const SCRAPING_CONFIG = {
   enabled: process.env.SCRAPING_ENABLED !== 'false',
   maxAthletes: parseInt(process.env.MAX_ATHLETES) || 20,
@@ -415,6 +417,7 @@ class HyroxScraper {
   timeToSeconds(timeStr) {
     const result = ImprovedTimingParser.cleanScrapedTimeData(timeStr, 'Unknown Event');
     return result ? result.seconds : 0;
+
   }
 
   async scrapeAthletes(baseUrl, maxAthletes = 10) {
@@ -550,6 +553,7 @@ app.get('/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     message: 'Hyrox Simulator Backend is running',
+
     version: '2.0.1',
     athletes_count: athletes.length,
     scraping_enabled: SCRAPING_CONFIG.enabled
@@ -752,6 +756,7 @@ app.post('/api/sessions', (req, res) => {
   }
   
   res.json({ success: true, session: sessionData });
+
 });
 
 app.get('/api/sessions/:userId', (req, res) => {
@@ -781,6 +786,7 @@ app.get('/api/docs', (req, res) => {
         ]
       }
     },
+
     endpoints: {
       'GET /': 'API info',
       'GET /health': 'Health check',
@@ -790,6 +796,7 @@ app.get('/api/docs', (req, res) => {
       'GET /api/templates': 'Get workout templates',
       'GET /api/stats/events': 'Get event statistics',
       'GET /api/stats/database': 'Get database statistics',
+
       'POST /api/scrape': 'Manual scrape trigger (now with enhanced parsing)',
       'GET /api/scrape/status': 'Get scraping status (includes parsing method info)',
       'POST /api/sessions': 'Create/update user session',
@@ -800,6 +807,7 @@ app.get('/api/docs', (req, res) => {
       timingAccuracy: 'Enhanced parser handles decimals, European formats, and edge cases',
       dataQuality: 'Better validation and error tracking for scraped data',
       compatibility: 'Full backward compatibility maintained'
+
     }
   });
 });
@@ -808,6 +816,7 @@ app.listen(PORT, async () => {
   console.log(`🚀 Enhanced Hyrox Simulator Backend running on port ${PORT}`);
   console.log(`🕷️ Scraping: ${SCRAPING_CONFIG.enabled ? 'ENABLED' : 'DISABLED'}`);
   console.log(`🔧 Version: 2.0.1 - Enhanced timing parser active`);
+
 
   await initializeFromDatabase();
   console.log(`📊 Serving ${athletes.length} athletes`);
