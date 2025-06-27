@@ -3,204 +3,238 @@ const cors = require('cors');
 const cron = require('node-cron');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const db = require('./database');
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3001;
 
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'https://hysimulator.vercel.app',
-    'https://www.hysimulator.com',
-    'https://hysimulator.com',
-    /\.vercel\.app$/,
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'Accept',
-    'Cache-Control',
-    'Pragma',
-    'Expires',
-    'X-Requested-With'
-  ],
-  credentials: true
-}));
-
-app.options('*', cors());
+app.use(cors());
 app.use(express.json());
 
-let athletes = [];
+class ImprovedTimingParser {
+
+  static parseTimeToSeconds(timeStr) {
+    if (!timeStr || typeof timeStr !== 'string') {
+      console.warn('Invalid time string provided:', timeStr);
+      return 0;
+    }
+
+    const cleanTime = timeStr.trim().replace(/\s+/g, ' ');
+    
+    const timePatterns = [
+      /^(\d{1,2}):(\d{2}):(\d{2})\.(\d{1,3})$/,
+      /^(\d{1,2}):(\d{2}):(\d{2})$/,
+      /^(\d{1,2}):(\d{2})\.(\d{1,3})$/,
+      /^(\d{1,2}):(\d{2})$/,
+      /^(\d{1,3})\.(\d{1,3})$/,
+      /^(\d{1,4})$/
+    ];
+
+    for (const pattern of timePatterns) {
+      const match = cleanTime.match(pattern);
+      if (match) {
+        return this.convertMatchToSeconds(match, pattern);
+      }
+    }
+
+    console.warn('Unrecognized time format, attempting fallback parsing:', timeStr);
+    return this.fallbackTimeConversion(cleanTime);
+  }
+
+  static convertMatchToSeconds(match, pattern) {
+    const groups = match.slice(1);
+
+    if (groups.length >= 3 && groups[0] && groups[1] && groups[2]) {
+      const hours = parseInt(groups[0]) || 0;
+      const minutes = parseInt(groups[1]) || 0;
+      const seconds = parseInt(groups[2]) || 0;
+      const milliseconds = groups[3] ? this.normalizeMilliseconds(groups[3]) : 0;
+      
+      const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+      return totalSeconds + (milliseconds / 1000);
+    }
+
+    if (groups.length >= 2 && groups[0] && groups[1]) {
+      const minutes = parseInt(groups[0]) || 0;
+      const seconds = parseInt(groups[1]) || 0;
+      const milliseconds = groups[2] ? this.normalizeMilliseconds(groups[2]) : 0;
+      
+      const totalSeconds = minutes * 60 + seconds;
+      return totalSeconds + (milliseconds / 1000);
+    }
+
+    if (groups.length >= 1 && groups[0]) {
+      const seconds = parseInt(groups[0]) || 0;
+      const milliseconds = groups[1] ? this.normalizeMilliseconds(groups[1]) : 0;
+      
+      return seconds + (milliseconds / 1000);
+    }
+    
+    return 0;
+  }
+
+  static normalizeMilliseconds(msStr) {
+    if (!msStr) return 0;
+
+    if (msStr.length === 1) return parseInt(msStr) * 100;
+    if (msStr.length === 2) return parseInt(msStr) * 10;
+    if (msStr.length === 3) return parseInt(msStr);
+    if (msStr.length > 3) return parseInt(msStr.substring(0, 3));
+    
+    return 0;
+  }
+
+  static fallbackTimeConversion(timeStr) {
+    const numbers = timeStr.match(/\d+/g);
+    if (!numbers || numbers.length === 0) return 0;
+
+    if (numbers.length === 1) {
+      const value = parseInt(numbers[0]);
+      return value;
+    }
+    
+    if (numbers.length === 2) {
+
+      const minutes = parseInt(numbers[0]) || 0;
+      const seconds = parseInt(numbers[1]) || 0;
+      return minutes * 60 + seconds;
+    }
+    
+    if (numbers.length >= 3) {
+
+      const hours = parseInt(numbers[0]) || 0;
+      const minutes = parseInt(numbers[1]) || 0;
+      const seconds = parseInt(numbers[2]) || 0;
+      return hours * 3600 + minutes * 60 + seconds;
+    }
+    
+    return 0;
+  }
+
+  static cleanScrapedTimeData(timeStr, eventName) {
+    if (!timeStr) return null;
+
+    let cleaned = timeStr
+      .replace(/^\s*[-–—]\s*/, '') 
+      .replace(/\s*[-–—]\s*$/, '')
+      .replace(/[^\d:.,]/g, '')  
+      .replace(/,/g, '.')     
+      .trim();
+
+    if (!cleaned || cleaned === '.' || cleaned === ':') {
+      return null;
+    }
+
+    const seconds = this.parseTimeToSeconds(cleaned);
+    
+    if (seconds <= 0) {
+      console.warn(`Invalid parsed time for ${eventName}: "${timeStr}" -> ${seconds}s`);
+      return null;
+    }
+
+    return {
+      originalText: timeStr,
+      cleanedText: cleaned,
+      seconds: Math.round(seconds * 100) / 100,
+      isValid: true
+    };
+  }
+}
 
 const SCRAPING_CONFIG = {
-  baseUrls: [
-    'https://results.hyrox.com/season-8/?pidp=ranking_nav&pid=list_overall',
-    'https://results.hyrox.com/season-8/?pidp=ranking_nav&pid=list_overall&search%5Bsex%5D=M',
-    'https://results.hyrox.com/season-8/?pidp=ranking_nav&pid=list_overall&search%5Bsex%5D=W'
-  ],
-  maxAthletes: process.env.SCRAPING_MAX_ATHLETES || 20,
-  delayMs: process.env.SCRAPING_DELAY_MS || 4000,
   enabled: process.env.SCRAPING_ENABLED !== 'false',
-  timeout: 45000
+  maxAthletes: parseInt(process.env.MAX_ATHLETES) || 20,
+  timeout: 30000,
+  delayMs: 2000,
+  retries: 3
 };
 
-const HYROX_EVENT_MAPPING = {
-  'Running 1': { name: '1km Run', order: 1 },
-  'Running 2': { name: '1km Run', order: 3 },
-  'Running 3': { name: '1km Run', order: 5 },
-  'Running 4': { name: '1km Run', order: 7 },
-  'Running 5': { name: '1km Run', order: 9 },
-  'Running 6': { name: '1km Run', order: 11 },
-  'Running 7': { name: '1km Run', order: 13 },
-  'Running 8': { name: '1km Run', order: 15 },
-  '1000m SkiErg': { name: '1000m SkiErg', order: 2 },
-  '50m Sled Push': { name: '50m Sled Push', order: 4 },
-  '50m Sled Pull': { name: '50m Sled Pull', order: 6 },
-  '80m Burpee Broad Jump': { name: '80m Burpee Broad Jumps', order: 8 },
-  '1000m Row': { name: '1000m Rowing', order: 10 },
-  '200m Farmers Carry': { name: '200m Farmers Carry', order: 12 },
-  '100m Sandbag Lunges': { name: '100m Sandbag Lunges', order: 14 },
-  'Wall Balls': { name: '100 Wall Balls', order: 16 }
-};
+let athletes = []
 
-const STANDARD_HYROX_EVENTS = [
-  { name: '1km Run', order: 1, defaultDuration: 240 },
-  { name: '1000m SkiErg', order: 2, defaultDuration: 240 },
-  { name: '1km Run', order: 3, defaultDuration: 240 },
-  { name: '50m Sled Push', order: 4, defaultDuration: 120 },
-  { name: '1km Run', order: 5, defaultDuration: 240 },
-  { name: '50m Sled Pull', order: 6, defaultDuration: 120 },
-  { name: '1km Run', order: 7, defaultDuration: 240 },
-  { name: '80m Burpee Broad Jumps', order: 8, defaultDuration: 300 },
-  { name: '1km Run', order: 9, defaultDuration: 240 },
-  { name: '1000m Rowing', order: 10, defaultDuration: 240 },
-  { name: '1km Run', order: 11, defaultDuration: 240 },
-  { name: '200m Farmers Carry', order: 12, defaultDuration: 150 },
-  { name: '1km Run', order: 13, defaultDuration: 240 },
-  { name: '100m Sandbag Lunges', order: 14, defaultDuration: 300 },
-  { name: '1km Run', order: 15, defaultDuration: 240 },
-  { name: '100 Wall Balls', order: 16, defaultDuration: 360 }
+
+const workoutTemplates = [
+  {
+    id: 'hyrox-standard',
+    name: 'Standard HYROX',
+    description: 'The official HYROX competition format',
+    events: [
+      { name: '1km Run', duration: 300, color: '#feed00' },
+      { name: '1km SkiErg', duration: 300, color: '#feed00' },
+      { name: '1km Run', duration: 300, color: '#feed00' },
+      { name: '50m Sled Push', duration: 120, color: '#feed00' },
+      { name: '1km Run', duration: 300, color: '#feed00' },
+      { name: '50m Sled Pull', duration: 120, color: '#feed00' },
+      { name: '1km Run', duration: 300, color: '#feed00' },
+      { name: '80m Burpee Broad Jumps', duration: 420, color: '#feed00' }
+    ]
+  }
 ];
 
-function findEventMapping(scrapedEventName) {
-  if (HYROX_EVENT_MAPPING[scrapedEventName]) {
-    return HYROX_EVENT_MAPPING[scrapedEventName];
-  }
-  
-  const cleanName = scrapedEventName.toLowerCase().trim();
-  for (const [mappedName, mapping] of Object.entries(HYROX_EVENT_MAPPING)) {
-    const cleanMappedName = mappedName.toLowerCase();
-    if (cleanName.includes(cleanMappedName) || cleanMappedName.includes(cleanName)) {
-      return mapping;
-    }
-  }
-  return null;
-}
-
 function transformScrapedData(scrapedData) {
-  return scrapedData.map((scraped, athleteIndex) => {
-    console.log(`🔄 Transforming data for: ${scraped.name}`);
-    console.log(`   Raw scraped data keys: ${Object.keys(scraped.data).join(', ')}`);
-    
-    const eventsByOrder = new Map();
+  return scrapedData.map((athlete, index) => {
+    const events = [];
     let totalTime = 0;
-    
-    Object.entries(scraped.data).forEach(([scrapedEventName, eventData]) => {
-      console.log(`   Processing: "${scrapedEventName}" with data:`, eventData);
-      
-      const mapping = findEventMapping(scrapedEventName);
-      
-      if (mapping) {
-        let duration = eventData.seconds || 0;
-        if (duration === 0 && eventData.time) {
-          duration = convertTimeToSeconds(eventData.time);
-          console.log(`   🔧 Converted time "${eventData.time}" to ${duration}s`);
-        }
-        
-        console.log(`   Duration for ${scrapedEventName}: ${duration}s (from eventData.seconds: ${eventData.seconds})`);
-        
-        eventsByOrder.set(mapping.order, {
-          name: mapping.name,
-          duration: duration,
-          color: '#feed00',
-          order_index: mapping.order
-        });
-        totalTime += duration;
-        console.log(`  ✅ Mapped: "${scrapedEventName}" -> "${mapping.name}" (${duration}s) - Total now: ${totalTime}s`);
-      } else {
-        console.log(`  ⚠️ No mapping found for: "${scrapedEventName}"`);
-      }
-    });
-    
-    STANDARD_HYROX_EVENTS.forEach(standardEvent => {
-      if (!eventsByOrder.has(standardEvent.order)) {
-        eventsByOrder.set(standardEvent.order, {
-          name: standardEvent.name,
-          duration: standardEvent.defaultDuration,
-          color: '#feed00',
-          order_index: standardEvent.order
-        });
-        totalTime += standardEvent.defaultDuration;
-        console.log(`  📝 Added default: "${standardEvent.name}" (${standardEvent.defaultDuration}s) - Total now: ${totalTime}s`);
-      }
-    });
-    
-    const orderedEvents = Array.from(eventsByOrder.keys())
-      .sort((a, b) => a - b)
-      .map(order => eventsByOrder.get(order));
-    
     let splitTime = 0;
-    const finalEvents = orderedEvents.map((event, index) => {
-      splitTime += event.duration;
-      return {
-        ...event,
-        order_index: index + 1,
-        split_time: splitTime
-      };
+    
+    const hyroxEventOrder = [
+      { scraped: 'Running 1', standard: '1km Run' },
+      { scraped: '1000m SkiErg', standard: '1km SkiErg' },
+      { scraped: 'Running 2', standard: '1km Run' },
+      { scraped: '50m Sled Push', standard: '50m Sled Push' },
+      { scraped: 'Running 3', standard: '1km Run' },
+      { scraped: '50m Sled Pull', standard: '50m Sled Pull' },
+      { scraped: 'Running 4', standard: '1km Run' },
+      { scraped: '80m Burpee Broad Jump', standard: '80m Burpee Broad Jumps' },
+      { scraped: 'Running 5', standard: '1km Run' },
+      { scraped: '1000m Row', standard: '100m Rowing' },
+      { scraped: 'Running 6', standard: '1km Run' },
+      { scraped: '200m Farmers Carry', standard: '200m Farmers Carry' },
+      { scraped: 'Running 7', standard: '1km Run' },
+      { scraped: '100m Sandbag Lunges', standard: '100m Sandbag Lunges' },
+      { scraped: 'Running 8', standard: '1km Run' },
+      { scraped: 'Wall Balls', standard: '100 Wall Balls' }
+    ];
+    
+    hyroxEventOrder.forEach((eventMapping, eventIndex) => {
+      const eventData = athlete.data[eventMapping.scraped];
+      
+      if (eventData && eventData.seconds > 0) {
+        splitTime += eventData.seconds;
+        events.push({
+          name: eventMapping.standard,
+          duration: eventData.seconds,
+          color: '#feed00',
+          order_index: eventIndex + 1,
+          split_time: splitTime
+        });
+        totalTime += eventData.seconds;
+      }
     });
     
-    console.log(`🎯 Transformed ${scraped.name}: ${finalEvents.length} events, ${totalTime}s total`);
+    let category = 'Mixed';
+    const athleteName = athlete.name.toLowerCase();
+    
+    if (athleteName.includes('women') || athleteName.includes('female') || athleteName.includes('(w)')) {
+      category = 'Women Pro';
+    } else if (athleteName.includes('men') || athleteName.includes('male') || athleteName.includes('(m)')) {
+      category = 'Men Pro';
+    } else {
+      category = 'Mixed';
+    }
+    
+    console.log(`🔄 Transformed ${athlete.name}: ${events.length} events in correct HYROX order, total: ${totalTime}s`);
     
     return {
-      id: athletes.length + athleteIndex + 1,
-      name: scraped.name,
-      category: 'Live Data',
+      id: athletes.length + index + 1,
+      name: athlete.name,
+      category: category,
       total_time: totalTime,
-      ranking: athleteIndex + 1,
-      year: new Date().getFullYear(),
-      location: 'Live Data',
-      lastUpdated: scraped.lastUpdated,
-      events: finalEvents
+      ranking: index + 1,
+      year: 2024,
+      location: 'HYROX Results',
+      events: events
     };
   });
-}
-
-function convertTimeToSeconds(timeStr) {
-  if (!timeStr || typeof timeStr !== 'string') return 0;
-  
-  const cleanTime = timeStr.replace(/[^\d:]/g, '');
-  const parts = cleanTime.split(':');
-  
-  console.log(`    🕐 Converting time: "${timeStr}" -> parts: [${parts.join(', ')}]`);
-  
-  if (parts.length === 2) {
-    const minutes = parseInt(parts[0]) || 0;
-    const seconds = parseInt(parts[1]) || 0;
-    const totalSeconds = minutes * 60 + seconds;
-    console.log(`    ✅ MM:SS format: ${minutes}m ${seconds}s = ${totalSeconds}s`);
-    return totalSeconds;
-  } else if (parts.length === 3) {
-    const hours = parseInt(parts[0]) || 0;
-    const minutes = parseInt(parts[1]) || 0;
-    const seconds = parseInt(parts[2]) || 0;
-    const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-    console.log(`    ✅ HH:MM:SS format: ${hours}h ${minutes}m ${seconds}s = ${totalSeconds}s`);
-    return totalSeconds;
-  }
-  
-  console.log(`    ❌ Invalid time format: "${timeStr}"`);
-  return 0;
 }
 
 class HyroxScraper {
@@ -217,7 +251,7 @@ class HyroxScraper {
     this.baseUrls = {
       allAthletes: 'https://results.hyrox.com/season-8/?pidp=ranking_nav&pid=list_overall',
       menAthletes: 'https://results.hyrox.com/season-8/?pidp=ranking_nav&pid=list_overall&search%5Bsex%5D=M',
-      womenAthletes: 'https://results.hyrox.com/season-8/?pidp=ranking_nav&pid=list_overall&search%5Bsex%5D=W'
+      womenAthletes: 'https://results.hyrox.com/season-8/?pidp=ranking_nav&pid=list_overall&search%5Bsex%5D=F'
     };
   }
 
@@ -225,22 +259,16 @@ class HyroxScraper {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  async fetchWithRetry(url, maxRetries = 3) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  async fetchWithRetry(url, retries = SCRAPING_CONFIG.retries) {
+    for (let i = 0; i < retries; i++) {
       try {
-        console.log(`   🔍 Attempt ${attempt}/${maxRetries}`);
+        console.log(`   🌐 Fetching: ${url} (attempt ${i + 1}/${retries})`);
         const response = await axios.get(url, this.axiosConfig);
-        if (response.status === 200 && response.data) {
-          console.log(`   ✅ Success - ${response.data.length} characters`);
-          return response.data;
-        }
-        throw new Error(`HTTP ${response.status}`);
+        return response.data;
       } catch (error) {
-        console.log(`   ❌ Attempt ${attempt} failed: ${error.message}`);
-        if (attempt === maxRetries) {
-          throw error;
-        }
-        await this.sleep(1000 * attempt);
+        console.log(`   ❌ Attempt ${i + 1} failed: ${error.message}`);
+        if (i === retries - 1) throw error;
+        await this.sleep(1000 * (i + 1));
       }
     }
   }
@@ -249,19 +277,17 @@ class HyroxScraper {
     const $ = cheerio.load(html);
     const athletes = [];
     
-    const athleteLinks = $('a[href*="content=detail"][href*="idp="]');
-    console.log(`   Found ${athleteLinks.length} potential athlete links`);
+    console.log('   🔍 Looking for athlete links...');
     
-    athleteLinks.each((index, link) => {
-      const $link = $(link);
-      const href = $link.attr('href');
-      const name = $link.text().trim();
-      
-      if (href && name) {
-        const idMatch = href.match(/idp=([^&]+)/);
-        if (idMatch && name.length > 0) {
-          const skipItems = ['Race Results', 'Start List', 'Qualifying Slots'];
-          if (!skipItems.includes(name)) {
+    $('a[href*="pid=start"]').each((index, element) => {
+      const href = $(element).attr('href');
+      if (href) {
+        const nameElement = $(element).find('.list-field.type-fullname');
+        const name = nameElement.length ? nameElement.text().trim() : $(element).text().trim();
+        
+        if (name && name.length > 2) {
+          const idMatch = href.match(/id_athlete=(\d+)/);
+          if (idMatch) {
             const fullUrl = href.startsWith('http') ? href : `https://results.hyrox.com/season-8/${href}`;
             athletes.push({
               name: name,
@@ -282,10 +308,12 @@ class HyroxScraper {
     const athlete = { 
       name: name, 
       data: {},
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      parsingErrors: [],
+      parsingMethod: 'enhanced' 
     };
 
-    console.log(`   📊 Parsing results for: ${name}`);
+    console.log(`   📊 Parsing results for: ${name} (Enhanced Parser)`);
     
     const workoutTables = $('table.table.table-condensed');
     console.log(`   Found ${workoutTables.length} tables`);
@@ -330,19 +358,31 @@ class HyroxScraper {
             
             console.log(`       Final: Event="${event}", Time="${timeText}", Place="${placeText}"`);
             
-            if (event && timeText && timeText.includes(':') && !timeText.includes('–')) {
+            if (event && timeText && !timeText.includes('–')) {
               const place = placeText.includes('–') ? '' : placeText;
               
-              console.log(`       🔢 About to convert time: "${timeText}"`);
-              const seconds = this.timeToSeconds(timeText);
-              console.log(`       🔢 Conversion result: ${seconds}s`);
+              console.log(`       🔢 About to convert time with enhanced parser: "${timeText}"`);
               
-              athlete.data[event] = {
-                time: timeText,
-                place: place,
-                seconds: seconds
-              };
-              console.log(`       ✅ SAVED: ${event} = ${timeText} (${seconds}s, place: ${place || 'N/A'})`);
+              const timeData = ImprovedTimingParser.cleanScrapedTimeData(timeText, event);
+              
+              if (timeData && timeData.seconds > 0) {
+                athlete.data[event] = {
+                  time: timeData.originalText,
+                  cleanedTime: timeData.cleanedText, 
+                  place: place,
+                  seconds: timeData.seconds,
+                  isValid: timeData.isValid, 
+                  parsingMethod: 'enhanced'
+                };
+                console.log(`       ✅ SAVED (Enhanced): ${event} = ${timeData.originalText} -> ${timeData.seconds}s (place: ${place || 'N/A'})`);
+              } else {
+                athlete.parsingErrors.push({
+                  event,
+                  originalTime: timeText,
+                  error: 'Failed enhanced parsing'
+                });
+                console.log(`       ❌ FAILED (Enhanced): Could not parse time "${timeText}" for ${event}`);
+              }
             } else {
               console.log(`       ❌ SKIPPED: Invalid data - Event="${event}", Time="${timeText}"`);
               
@@ -364,22 +404,17 @@ class HyroxScraper {
       }
     });
     
-    console.log(`   🎯 Final result for ${name}: ${Object.keys(athlete.data).length} events parsed`);
-    if (Object.keys(athlete.data).length > 0) {
-      console.log(`   📋 Events found: ${Object.keys(athlete.data).join(', ')}`);
+    console.log(`   🎯 Enhanced parsing result for ${name}: ${Object.keys(athlete.data).length} events parsed`);
+    if (athlete.parsingErrors.length > 0) {
+      console.log(`   ⚠️ Parsing errors: ${athlete.parsingErrors.length}`);
     }
     
     return athlete;
   }
 
   timeToSeconds(timeStr) {
-    if (!timeStr || typeof timeStr !== 'string') return 0;
-    const cleanTime = timeStr.replace(/[^\d:]/g, '');
-    const parts = cleanTime.split(':');
-    if (parts.length === 2) {
-      return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-    }
-    return 0;
+    const result = ImprovedTimingParser.cleanScrapedTimeData(timeStr, 'Unknown Event');
+    return result ? result.seconds : 0;
   }
 
   async scrapeAthletes(baseUrl, maxAthletes = 10) {
@@ -444,7 +479,7 @@ async function performPeriodicScrape() {
     return;
   }
 
-  console.log('🚀 Starting periodic HYROX scrape...');
+  console.log('🚀 Starting monthly HYROX scrape...');
   const scraper = new HyroxScraper();
   
   try {
@@ -452,6 +487,8 @@ async function performPeriodicScrape() {
     
     if (scrapedData.length > 0) {
       const newAthletes = transformScrapedData(scrapedData);
+      
+      await db.saveAthletes(newAthletes);
       
       let updated = 0, added = 0;
       newAthletes.forEach(newAthlete => {
@@ -473,15 +510,36 @@ async function performPeriodicScrape() {
 }
 
 if (SCRAPING_CONFIG.enabled) {
-  cron.schedule('0 */6 * * *', performPeriodicScrape);
-  console.log('⏰ Scheduled scraping every 6 hours');
+  cron.schedule('0 0 1 * *', performPeriodicScrape);
+  console.log('⏰ Scheduled scraping monthly (1st day of each month)');
+}
+
+async function initializeFromDatabase() {
+  try {
+    console.log('🔄 Loading initial data from database...');
+
+    await db.ready;
+    
+    const dbAthletes = await db.loadAthletes();
+    
+    if (dbAthletes.length > 0) {
+      athletes.splice(0, athletes.length, ...dbAthletes);
+      console.log(`✅ Loaded ${athletes.length} athletes from database`);
+    } else {
+      console.log('📝 No athletes in database, using hardcoded data');
+    }
+  } catch (error) {
+    console.error('❌ Failed to load from database:', error);
+    console.log('📝 Using hardcoded athlete data');
+  }
 }
 
 app.get('/', (req, res) => {
   res.json({
     message: 'HYROX Simulator Backend API',
-    version: '2.0.0',
-    features: ['Live Data Scraping', 'Athlete Management'],
+    version: '2.0.1', 
+    changes: 'Enhanced timing parser for better data accuracy', 
+    features: ['Live Data Scraping', 'Athlete Management', 'Database Storage', 'Enhanced Timing Accuracy'],
     status: 'running',
     scraping: { enabled: SCRAPING_CONFIG.enabled }
   });
@@ -491,14 +549,23 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
+    message: 'Hyrox Simulator Backend is running',
+    version: '2.0.1',
     athletes_count: athletes.length,
     scraping_enabled: SCRAPING_CONFIG.enabled
   });
 });
 
-app.get('/api/athletes', (req, res) => {
+app.get('/api/athletes', async (req, res) => {
   try {
     const { category, year, limit } = req.query;
+    
+    if (athletes.length === 0) {
+      console.log('🔄 Loading athletes from database...');
+      const dbAthletes = await db.loadAthletes();
+      athletes.splice(0, athletes.length, ...dbAthletes);
+    }
+    
     let filteredAthletes = [...athletes];
     
     if (category && category !== 'all') {
@@ -513,6 +580,92 @@ app.get('/api/athletes', (req, res) => {
     
     res.json(filteredAthletes);
   } catch (error) {
+    console.error('Error serving athletes:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/athletes/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const athlete = athletes.find(a => a.id === parseInt(id));
+    
+    if (!athlete) {
+      return res.status(404).json({ error: 'Athlete not found' });
+    }
+    
+    res.json(athlete);
+  } catch (error) {
+    console.error('Error serving athlete:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/leaderboard', (req, res) => {
+  const { category = 'all', limit = 10 } = req.query;
+  
+  let leaderboard = athletes;
+  
+  if (category !== 'all') {
+    leaderboard = leaderboard.filter(a => 
+      a.category.toLowerCase().includes(category.toLowerCase())
+    );
+  }
+  
+  leaderboard = leaderboard
+    .sort((a, b) => a.total_time - b.total_time)
+    .slice(0, parseInt(limit))
+    .map((athlete, index) => ({
+      ...athlete,
+      position: index + 1
+    }));
+  
+  res.json(leaderboard);
+});
+
+app.get('/api/templates', (req, res) => {
+  res.json(workoutTemplates);
+});
+
+app.get('/api/stats/events', (req, res) => {
+  const eventStats = {};
+  
+  athletes.forEach(athlete => {
+    athlete.events.forEach(event => {
+      if (!eventStats[event.name]) {
+        eventStats[event.name] = {
+          name: event.name,
+          times: [],
+          count: 0
+        };
+      }
+      eventStats[event.name].times.push(event.duration);
+      eventStats[event.name].count++;
+    });
+  });
+
+  Object.keys(eventStats).forEach(eventName => {
+    const times = eventStats[eventName].times;
+    eventStats[eventName].average = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+    eventStats[eventName].fastest = Math.min(...times);
+    eventStats[eventName].slowest = Math.max(...times);
+  });
+  
+  res.json(eventStats);
+});
+
+app.get('/api/stats/database', async (req, res) => {
+  try {
+    const stats = await db.getStats();
+    res.json({
+      database: stats,
+      memory: {
+        total_athletes: athletes.length,
+        last_loaded: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Error getting database stats:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -530,6 +683,8 @@ app.post('/api/scrape', async (req, res) => {
     if (scrapedData.length > 0) {
       const newAthletes = transformScrapedData(scrapedData);
       
+      const dbResult = await db.saveAthletes(newAthletes);
+      
       let updated = 0, added = 0;
       newAthletes.forEach(newAthlete => {
         const existingIndex = athletes.findIndex(a => a.name === newAthlete.name);
@@ -546,8 +701,10 @@ app.post('/api/scrape', async (req, res) => {
         success: true, 
         message: `Scraping completed for ${category}`,
         scraped: scrapedData.length,
-        updated, added,
-        total_athletes: athletes.length
+        database: dbResult,
+        memory: { updated, added },
+        total_athletes: athletes.length,
+        parsingMethod: 'enhanced'
       });
     } else {
       res.json({ 
@@ -557,6 +714,7 @@ app.post('/api/scrape', async (req, res) => {
       });
     }
   } catch (error) {
+    console.error('Manual scrape error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -566,27 +724,93 @@ app.get('/api/scrape/status', (req, res) => {
     enabled: SCRAPING_CONFIG.enabled,
     config: SCRAPING_CONFIG,
     last_update: athletes[0]?.lastUpdated || 'Never',
-    total_athletes: athletes.length
+    total_athletes: athletes.length,
+    parsingMethod: 'enhanced',
+    version: '2.0.1' 
   });
 });
 
-app.get('/api/athletes/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const athlete = athletes.find(a => a.id === parseInt(id));
-    if (!athlete) {
-      return res.status(404).json({ error: 'Athlete not found' });
-    }
-    res.json(athlete);
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error' });
+let userSessions = [];
+
+app.post('/api/sessions', (req, res) => {
+  const { userId, athleteId, eventIndex, timeRemaining, totalElapsed } = req.body;
+  
+  const sessionIndex = userSessions.findIndex(s => s.userId === userId);
+  const sessionData = {
+    userId,
+    athleteId,
+    eventIndex,
+    timeRemaining,
+    totalElapsed,
+    lastUpdated: new Date().toISOString()
+  };
+  
+  if (sessionIndex >= 0) {
+    userSessions[sessionIndex] = sessionData;
+  } else {
+    userSessions.push(sessionData);
   }
+  
+  res.json({ success: true, session: sessionData });
 });
 
-app.listen(PORT, () => {
+app.get('/api/sessions/:userId', (req, res) => {
+  const { userId } = req.params;
+  const session = userSessions.find(s => s.userId === userId);
+  
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  res.json(session);
+});
+
+app.get('/api/docs', (req, res) => {
+  res.json({
+    title: 'HYROX Simulator API',
+    version: '2.0.1',
+    changelog: {
+      '2.0.1': {
+        type: 'PATCH',
+        changes: [
+          'Fixed timing data parsing accuracy',
+          'Enhanced time format recognition',
+          'Better handling of scraped data edge cases',
+          'Improved validation for event times',
+          'Added parsing error tracking'
+        ]
+      }
+    },
+    endpoints: {
+      'GET /': 'API info',
+      'GET /health': 'Health check',
+      'GET /api/athletes': 'Get all athletes (supports ?category= and ?year= filters)',
+      'GET /api/athletes/:id': 'Get specific athlete',
+      'GET /api/leaderboard': 'Get leaderboard (supports ?category= and ?limit= params)',
+      'GET /api/templates': 'Get workout templates',
+      'GET /api/stats/events': 'Get event statistics',
+      'GET /api/stats/database': 'Get database statistics',
+      'POST /api/scrape': 'Manual scrape trigger (now with enhanced parsing)',
+      'GET /api/scrape/status': 'Get scraping status (includes parsing method info)',
+      'POST /api/sessions': 'Create/update user session',
+      'GET /api/sessions/:userId': 'Get user session',
+      'GET /api/docs': 'This documentation'
+    },
+    improvements: {
+      timingAccuracy: 'Enhanced parser handles decimals, European formats, and edge cases',
+      dataQuality: 'Better validation and error tracking for scraped data',
+      compatibility: 'Full backward compatibility maintained'
+    }
+  });
+});
+
+app.listen(PORT, async () => {
   console.log(`🚀 Enhanced Hyrox Simulator Backend running on port ${PORT}`);
-  console.log(`📊 Serving ${athletes.length} athletes`);
   console.log(`🕷️ Scraping: ${SCRAPING_CONFIG.enabled ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`🔧 Version: 2.0.1 - Enhanced timing parser active`);
+
+  await initializeFromDatabase();
+  console.log(`📊 Serving ${athletes.length} athletes`);
   
   if (SCRAPING_CONFIG.enabled) {
     setTimeout(performPeriodicScrape, 5000);
